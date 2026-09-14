@@ -101,6 +101,12 @@ public static class HealthAnalyzer
         progress?.Report("Locating NTFS volumes…");
         var cands = VolumeLocator.Find(dev, table, scanIfNoneFound: true, progress);
         if (cands.Count == 0) df.Add(new Finding { Severity = Severity.Critical, Area = "File systems", Title = "No NTFS volume found", Detail = "No valid NTFS boot sector (primary or backup) was found in any partition or by scanning.", Repair = RepairKind.CopyDataOffNow });
+        if (table.Scheme == PartitionScheme.None && cands.Any(c => c.StartOffset == 0))
+        {
+            // A bare volume (partition image or \\.\X: handle) legitimately has no partition table.
+            df.RemoveAll(f => f.Title == "No usable partition table");
+            df.Insert(0, new Finding { Severity = Severity.Info, Area = "Partition table", Title = "Bare NTFS volume (no partition table)", Detail = "The source starts directly with an NTFS boot sector: a partition image or a volume handle rather than a whole disk." });
+        }
         foreach (var c in cands)
         {
             ct.ThrowIfCancellationRequested();
