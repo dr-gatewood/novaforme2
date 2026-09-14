@@ -35,7 +35,7 @@
                       <Button Content="Save report…" Click="Report_Click" Visibility="{Binding IsFinished, Converter={x:Static local:BoolToVis.Instance}}" Margin="0" />
                     </StackPanel>
                   </Grid>
-                  <ProgressBar Value="{Binding Percent, Mode=OneWay}" Maximum="100" Margin="0,12,0,8" />
+                  <ProgressBar Tag="{Binding Percent, Mode=OneWay}" Maximum="100" Margin="0,12,0,8" Loaded="JobBar_Loaded" />
                   <TextBlock Text="{Binding StatusText}" FontSize="12" />
                   <TextBlock Text="{Binding CurrentFile}" Style="{StaticResource Muted}" FontSize="11" TextTrimming="CharacterEllipsis" />
                   <Expander Header="{Binding ErrorCount}" HeaderStringFormat="Problems ({0})" Margin="0,6,0,0" Foreground="{DynamicResource TextMuted}" Visibility="{Binding ErrorCount, Converter={x:Static local:CountToVis.Instance}}">

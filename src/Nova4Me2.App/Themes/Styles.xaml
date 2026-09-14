@@ -392,7 +392,7 @@
 
   <!-- ProgressBar with animated shimmer -->
   <Style TargetType="ProgressBar">
-    <Setter Property="Height" Value="10" />
+    <Setter Property="Height" Value="14" />
     <Setter Property="Foreground" Value="{DynamicResource AccentGradient}" />
     <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
     <Setter Property="BorderThickness" Value="0" />
@@ -400,9 +400,22 @@
       <Setter.Value>
         <ControlTemplate TargetType="ProgressBar">
           <Grid x:Name="Root">
-            <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="999" />
-            <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="999" HorizontalAlignment="Left">
-              <Border x:Name="Shimmer" CornerRadius="999" Opacity="0.35">
+            <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="6" />
+            <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="6" HorizontalAlignment="Left" MinWidth="8">
+              <Border.Triggers>
+                <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                  <BeginStoryboard>
+                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                      <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.7" Duration="0:0:0.9">
+                        <DoubleAnimation.EasingFunction>
+                          <SineEase EasingMode="EaseInOut" />
+                        </DoubleAnimation.EasingFunction>
+                      </DoubleAnimation>
+                    </Storyboard>
+                  </BeginStoryboard>
+                </EventTrigger>
+              </Border.Triggers>
+              <Border x:Name="Shimmer" CornerRadius="6" Opacity="0.4">
                 <Border.Background>
                   <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                     <GradientStop Color="#00FFFFFF" Offset="0" />

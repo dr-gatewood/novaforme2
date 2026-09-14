@@ -128,7 +128,7 @@ public partial class HealthView : UserControl, INovaView
     {
         ScanPhase.Text = r.Phase + (r.ChunksRead > 0 ? $" — {r.Grade}" : "");
         ScanStats.Text = $"{Format.Bytes(r.BytesRead)} of {Format.Bytes(r.BytesTotal)} · {r.BadSectors} bad · {r.ChunksSlow} slow · {Format.Rate(r.BytesPerSecond)} · {r.Reconnects} link drops";
-        ScanProgress.Value = r.Fraction * 100;
+        Services.Animations.Grow(ScanProgress, r.Fraction * 100);
         Map.Update(r.Map, r.Complete ? null : r.Map?.Start + (long)(r.Fraction * (r.Map?.Length ?? 0)));
     }
 

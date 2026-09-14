@@ -3,6 +3,9 @@
 ## Added
 - **VHD output.** Clone/Image can write the image as a fixed-size VHD (raw image + footer) so Windows Disk Management can attach it (Action → Attach VHD, tick Read-only) and give the recovered volume a normal drive letter. A "Convert existing .img to VHD" button and `nova4me2 vhd <image>` handle images made earlier; `.vhd` files open in Nova4Me2 like raw images.
 
+- Wordmark now reads NoVa4Me2 with the NVMe2 letters in white and the rest in the accent colour.
+- Progress bars (Copy/Recover, Clone, surface scan) are rounded rectangles that pulse, carry a light sweep, and grow smoothly between updates.
+
 ## Fixed
 - Option toggles (Whole disk / One partition / Image file / Another drive, mode switches) are rounded rectangles instead of ovals.
 - Progress bars still threw `'Shimmer' name cannot be found in the name scope of ControlTemplate` on load (error toast at start-up, visible in the log). The shimmer animation now runs on the element itself instead of through a template-scoped storyboard target, so no name lookup is involved.

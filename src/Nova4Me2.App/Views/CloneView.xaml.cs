@@ -159,7 +159,7 @@ public partial class CloneView : UserControl, INovaView
     private void Show(ImageProgress p)
     {
         PhaseText.Text = p.Phase;
-        Progress.Value = p.Fraction * 100;
+        Services.Animations.Grow(Progress, p.Fraction * 100);
         EtaText.Text = p.Eta is { } eta ? $"ETA {Format.Duration(eta)} · elapsed {Format.Duration(p.Elapsed)}" : $"elapsed {Format.Duration(p.Elapsed)}";
         StatBytes.Text = $"{Format.Bytes(p.BytesDone)} of {Format.Bytes(p.BytesTotal)}";
         StatRate.Text = Format.Rate(p.BytesPerSecond);
