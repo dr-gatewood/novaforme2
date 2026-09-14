@@ -411,7 +411,7 @@
                   </LinearGradientBrush>
                 </Border.Background>
                 <Border.RenderTransform>
-                  <TranslateTransform x:Name="ShimmerMove" X="-200" />
+                  <TranslateTransform X="-200" />
                 </Border.RenderTransform>
               </Border>
             </Border>
@@ -420,7 +420,7 @@
             <EventTrigger RoutedEvent="Loaded">
               <BeginStoryboard>
                 <Storyboard RepeatBehavior="Forever">
-                  <DoubleAnimation Storyboard.TargetName="ShimmerMove" Storyboard.TargetProperty="X" From="-300" To="1200" Duration="0:0:2.2" />
+                  <DoubleAnimation Storyboard.TargetName="Shimmer" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="-300" To="1200" Duration="0:0:2.2" />
                 </Storyboard>
               </BeginStoryboard>
             </EventTrigger>

@@ -143,7 +143,7 @@ public static class NvmeQuery
             Bin.PutU32(q, 20, subValue);
             Bin.PutU32(q, 24, 40);          // ProtocolDataOffset (from start of STORAGE_PROTOCOL_SPECIFIC_DATA)
             Bin.PutU32(q, 28, (uint)dataLen); // ProtocolDataLength
-            var o = NativeMethods.Ioctl(h, NativeMethods.IOCTL_STORAGE_QUERY_PROPERTY, q, q.Length, out int err);
+            var o = NativeMethods.Ioctl(h, NativeMethods.IOCTL_STORAGE_QUERY_PROPERTY, q, q.Length, out int err, 5000);
             if (o == null) { error = NativeMethods.ErrorText(err); continue; }
             if (o.Length < 48 + dataLen) { error = "short reply"; continue; }
             uint off = Bin.U32(o, 8 + 16), len = Bin.U32(o, 8 + 20);

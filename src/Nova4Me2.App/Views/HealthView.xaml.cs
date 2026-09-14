@@ -31,6 +31,10 @@ public partial class HealthView : UserControl, INovaView
     {
         InitializeComponent();
         Ui.State.SourceChanged += () => Dispatcher.BeginInvoke(Reset);
+        Ui.State.HardwareChanged += () => Dispatcher.BeginInvoke(() =>
+        {
+            if (Ui.State.LastHealth is { } h && Ui.State.Hardware is { } hw) { h.NvmeHealth = hw.NvmeHealth; h.AtaSmart = hw.AtaSmart; HealthAnalyzer.Rescore(h); h.BootFix = HealthAnalyzer.AssessBootFix(h); Render(h); }
+        });
     }
 
     public void OnShown()

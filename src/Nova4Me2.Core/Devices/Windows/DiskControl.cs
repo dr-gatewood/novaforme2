@@ -54,6 +54,87 @@ public static class DiskControl
         Log.Info($"PhysicalDrive{driveNumber}: offline={offline} read-only={readOnly} (persist={persist})");
     }
 
+    /// <summary>
+    /// Try to protect the drive with this identity right now: locate it by serial/model/size with a short budget and set
+    /// offline + read-only. Returns the drive number on success, null if it is not present or did not answer in time.
+    /// Meant to be called repeatedly (on every arrival event) for a disk that keeps dropping off the bus.
+    /// </summary>
+    public static int? TryProtectByIdentity(string serial, string model, long length, int budgetMs = 6000)
+    {
+        int? result = null;
+        var done = new ManualResetEventSlim(false);
+        var t = new Thread(() =>
+        {
+            try
+            {
+                foreach (var d in DriveEnumerator.QuickList(budgetMs: Math.Max(1000, budgetMs / 3)))
+                {
+                    if (d.OpenError != null) continue;
+                    bool match = d.Length == length && (serial.Length > 0 && d.Storage.Serial.Length > 0 ? string.Equals(serial, d.Storage.Serial, StringComparison.OrdinalIgnoreCase) : string.Equals(model, d.Storage.Model, StringComparison.OrdinalIgnoreCase));
+                    if (!match) continue;
+                    if (d.Attributes.Queried && d.Attributes.Offline && d.Attributes.ReadOnly) { result = d.Number; break; }
+                    SetAttributes(d.Number, offline: true, readOnly: true);
+                    result = d.Number;
+                    break;
+                }
+            }
+            catch (Exception ex) { Log.Warn("protect attempt: " + ex.Message); }
+            finally { done.Set(); }
+        }) { IsBackground = true, Name = "nova-protect" };
+        t.Start();
+        return done.Wait(budgetMs) ? result : null;
+    }
+
+    /// <summary>Protect by drive number with a time budget (for disks whose identity could not be read yet). Returns the number on success.</summary>
+    public static int? TryProtectByNumber(int number, int budgetMs = 6000)
+    {
+        bool ok = false;
+        var done = new ManualResetEventSlim(false);
+        var t = new Thread(() => { try { SetAttributes(number, offline: true, readOnly: true); ok = true; } catch (Exception ex) { Log.Warn($"protect PhysicalDrive{number}: {ex.Message}"); } finally { done.Set(); } }) { IsBackground = true, Name = "nova-protect" };
+        t.Start();
+        return done.Wait(budgetMs) && ok ? number : null;
+    }
+
+    public enum SanPolicy { Unknown = 0, OnlineAll = 1, OfflineShared = 2, OfflineAll = 3, OfflineInternal = 4 }
+
+    /// <summary>Windows' policy for newly discovered disks. OfflineAll = every new disk arrives offline (nothing mounts) until brought online by hand.</summary>
+    public static SanPolicy GetSanPolicy()
+    {
+        try
+        {
+            string o = RunDiskpart("san");
+            if (o.Contains("Offline All", StringComparison.OrdinalIgnoreCase)) return SanPolicy.OfflineAll;
+            if (o.Contains("Offline Shared", StringComparison.OrdinalIgnoreCase)) return SanPolicy.OfflineShared;
+            if (o.Contains("Offline Internal", StringComparison.OrdinalIgnoreCase)) return SanPolicy.OfflineInternal;
+            if (o.Contains("Online All", StringComparison.OrdinalIgnoreCase)) return SanPolicy.OnlineAll;
+        }
+        catch (Exception ex) { Log.Warn("san policy query: " + ex.Message); }
+        return SanPolicy.Unknown;
+    }
+
+    public static void SetSanPolicy(SanPolicy policy)
+    {
+        string name = policy switch { SanPolicy.OfflineAll => "OfflineAll", SanPolicy.OfflineShared => "OfflineShared", SanPolicy.OfflineInternal => "OfflineInternal", _ => "OnlineAll" };
+        RunDiskpart("san policy=" + name);
+        Log.Info("SAN policy set to " + name);
+    }
+
+    private static string RunDiskpart(string script)
+    {
+        string file = Path.Combine(Path.GetTempPath(), $"nova4me2-diskpart-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(file, script + Environment.NewLine + "exit" + Environment.NewLine);
+        try
+        {
+            var psi = new ProcessStartInfo("diskpart.exe", $"/s \"{file}\"") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+            using var p = Process.Start(psi) ?? throw new InvalidOperationException("Cannot start diskpart");
+            string o = p.StandardOutput.ReadToEnd();
+            if (!p.WaitForExit(30000)) { try { p.Kill(); } catch { } throw new TimeoutException("diskpart did not finish."); }
+            if (p.ExitCode != 0) throw new InvalidOperationException("diskpart failed: " + o.Trim());
+            return o;
+        }
+        finally { try { File.Delete(file); } catch { } }
+    }
+
     public static bool IsAutomountEnabled()
     {
         try

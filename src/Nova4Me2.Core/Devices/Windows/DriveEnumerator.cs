@@ -165,10 +165,41 @@ public static class DriveEnumerator
         return map;
     }
 
+    /// <summary>
+    /// Fast identity-only enumeration (no volume probing, no system-disk lookup): each drive gets a short budget and a
+    /// stuck probe is abandoned. Used for reconnects and the title-bar drive selector, where a flapping USB disk must not
+    /// hold everything up.
+    /// </summary>
+    public static List<PhysicalDriveInfo> QuickList(int maxDrives = 32, int budgetMs = 2500)
+    {
+        var list = new List<PhysicalDriveInfo>();
+        int misses = 0;
+        for (int n = 0; n < maxDrives; n++)
+        {
+            int num = n;
+            var d = WithTimeout(() =>
+            {
+                try
+                {
+                    using var pd = new WindowsPhysicalDrive($@"\\.\PhysicalDrive{num}", ioTimeoutMs: budgetMs);
+                    return new PhysicalDriveInfo { Number = num, Storage = pd.Info, Length = pd.Length, SectorSize = pd.SectorSize, Attributes = GetAttributesViaHandle(pd) };
+                }
+                catch (IOException ex) when (ex.HResult == NativeMethods.ERROR_ACCESS_DENIED || (ex.HResult & 0xFFFF) == NativeMethods.ERROR_ACCESS_DENIED)
+                { return new PhysicalDriveInfo { Number = num, OpenError = "Access denied (run as Administrator)" }; }
+                catch { return new PhysicalDriveInfo { Number = num, OpenError = "missing" }; }
+            }, budgetMs);
+            if (d == null) { list.Add(new PhysicalDriveInfo { Number = n, OpenError = "Not responding", ProbeTimedOut = true }); misses = 0; continue; }
+            if (d.OpenError == "missing") { if (++misses > 8) break; continue; }
+            list.Add(d);
+            misses = 0;
+        }
+        return list;
+    }
+
     /// <summary>Find a drive by identity (serial/model/size) after a USB re-enumeration; the drive number may have changed.</summary>
     public static PhysicalDriveInfo? FindByIdentity(DriveIdentity id)
     {
-        foreach (var d in List())
+        foreach (var d in QuickList())
         {
             if (d.OpenError != null) continue;
             if (id.Matches(d.Storage.Serial, d.Storage.Model, d.Length)) return d;
