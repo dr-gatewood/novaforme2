@@ -36,6 +36,17 @@ NTFS driver then refuses the volume even though every structure is intact. Nova4
 "sectors", so it is unaffected — and it will tell you that the fix is to attach the SSD directly rather than
 to rewrite anything.
 
+## Download
+
+Ready-made Windows x64 builds are on the [Releases page](https://github.com/dr-gatewood/novaforme2/releases):
+
+* `Nova4Me2-<version>-win-x64.zip` — desktop app. Unzip anywhere, run `Nova4Me2.exe` (it asks for Administrator rights; raw disk access needs them).
+* `nova4me2-cli-<version>-win-x64.zip` — single-file command-line tool.
+* `SHA256SUMS.txt` — checksums. No .NET installation is required; the builds are self-contained.
+
+Windows SmartScreen may warn about an unsigned download; the builds are produced by the public GitHub Actions
+workflow in this repository, and you can always build from source instead.
+
 ## Building
 
 Requirements: .NET 8 SDK on Windows (the desktop app is WPF; the core, CLI and tests also build and run on Linux).
@@ -105,6 +116,21 @@ nova4me2 stabilize-usb [--status|--revert]
 * Drag-and-drop and *Copy to…* give Windows real file contents read through Nova4Me2, so partially unreadable
   files arrive with zero-filled gaps rather than being lost; the job report lists them.
 
+## Disclaimer
+
+Nova4Me2 is a data-recovery tool for drives that are already in trouble. It is provided **as is, without
+warranty of any kind** (see `LICENSE`). Reading from a failing drive can hasten its death; copy the data you
+care about first, and prefer working from an image. The *Repair* and *Clone-to-drive* features write to a
+disk you choose; they back up what they replace and ask for typed confirmation, but the responsibility for
+pointing them at the right disk is yours. If the data is irreplaceable and the drive is physically failing,
+a professional recovery lab is the safer route.
+
+## Contributing / reporting problems
+
+Issues and pull requests are welcome. When reporting a problem please include the health report
+(Health → *Save report…*, HTML or TXT), the drive model, the enclosure/bridge if any, and the log from
+`%LocalAppData%\Nova4Me2\nova4me2.log`. Please strip anything private from file listings first.
+
 ## Limitations (honest list)
 
 * **EFS-encrypted** files are copied as ciphertext (needs the original user's key). **WOF/CompactOS**
@@ -117,6 +143,10 @@ nova4me2 stabilize-usb [--status|--revert]
   covered by tests against real NTFS images, but the Windows device layer (PhysicalDrive I/O, SMART
   IOCTLs, WinFsp mount, drag-out) needs a real Windows machine with the enclosure attached to be exercised
   end to end — please report anything that misbehaves.
+
+## License
+
+MIT — see `LICENSE`. Third-party components are listed in `THIRD-PARTY-NOTICES.md`.
 
 ## Project layout
 
