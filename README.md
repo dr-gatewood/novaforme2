@@ -54,7 +54,12 @@ for Administrator rights — raw device access needs them).
 Optional: install **WinFsp** (https://winfsp.dev/rel/) to enable *Mount as drive letter*.
 
 The GitHub Actions workflow builds everything on Windows, runs the test-suite on Linux against generated
-NTFS images, and uploads the published folders as an artifact.
+NTFS images, and — when a `v*` tag is pushed — publishes a GitHub Release with the zipped executables:
+
+```powershell
+git tag -a v1.0.0 -m "Nova4Me2 v1.0.0"
+git push origin v1.0.0
+```
 
 ## Using the desktop app
 
