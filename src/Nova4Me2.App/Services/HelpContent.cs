@@ -15,6 +15,9 @@ This is where you pick the disk to work on. Nova4Me2 talks to the disk sector by
 - Open image file… lets you work on a raw .img/.dd image instead of the physical drive: the safest way to recover from a failing SSD is to image it first (Clone view) and then work from the image.
 - Stabilize USB applies the standard Windows tweaks that stop enclosures from being suspended or re-probed (selective suspend, device power management, automount, disk time-out). Everything it changes is recorded and can be reverted from the same dialog.
 
+# Keeping Windows out of the way
+When a RAW or unresponsive disk is connected, Nova4Me2 offers to take it **offline and read-only** in Windows. An offline disk is ignored by the mount manager (no more mount attempts, no ""directory is invalid"" errors, no Explorer probing) while raw reads keep working. ""Bring back online"" reverses it. Every request the tool sends to a drive has a hard time-out, so a hung bridge can never freeze the app.
+
 # Connection status
 The dot in the status bar shows the link state. If the enclosure drops off the bus, the app waits for it to come back (up to the reconnect time-out in Settings) and resumes the read that was in flight. Reads are chunked and throttled if you ask for it, which many flaky bridges appreciate.
 

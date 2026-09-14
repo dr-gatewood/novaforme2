@@ -17,6 +17,7 @@ the disk, apply the few safe boot-record repairs, and export reports.
 | Area | Details |
 |---|---|
 | **Read RAW volumes** | Own NTFS reader: boot sector (or its backup copy at the end of the volume, or a signature scan), `$MFT` with fixups, attribute lists, data runs, sparse files, LZNT1 compression, alternate data streams, hard links, directory `$I30` indexes, and a full-MFT scan that rebuilds the tree when indexes are damaged and lists deleted files. |
+| **Keep Windows out of the way** | When a RAW or unresponsive disk is connected, the app offers to take it **offline and read-only** in Windows (the mount manager then ignores it: no more mount attempts, no "directory is invalid" errors, no Explorer probing) or to disable automount. Reversible from the Drives view. Every device request has a hard time-out with cancellation, and nothing on the UI thread ever waits for a device or for Windows' mount manager. |
 | **Keep the USB link alive** | Chunked, sector-aligned unbuffered reads; failures are classified as *device gone* (wait for the drive to re-enumerate — even under a new `PhysicalDriveN` number — then resume the read) or *localised* (retry in smaller pieces down to one sector, then declare a bad sector). Keepalive reads stop enclosures from idling; optional throttling and chunk size for flaky bridges. **Stabilize USB** applies the standard Windows fixes (selective suspend, per-device power management, automount, disk time-out) and can revert them. |
 | **Mount as a drive letter** | Through [WinFsp](https://winfsp.dev/rel/) (free user-mode file-system framework) the volume is exposed **read-only as a normal Windows drive** (e.g. `R:`), so Explorer and any program can open files from it. Windows' own NTFS driver is bypassed entirely. |
 | **Copy files** | Multi-select copy with progress, throughput and ETA; files containing unreadable sectors are written with zero-filled gaps and flagged; timestamps/attributes preserved; ADS optional; verify-after-copy optional; drag selections straight into Explorer (virtual files, Explorer copies them lazily on its own thread). |
@@ -74,9 +75,10 @@ git push origin v1.0.0
 
 ## Using the desktop app
 
-1. **Drives** — click the card for the enclosure's disk (it is marked *RAW* when Windows cannot read it).
-   The app opens it read-only, finds the NTFS volume(s) and reads the hardware data. If the enclosure keeps
-   dropping, press **Stabilize USB…**, apply, and re-plug it.
+1. **Drives** — when the enclosure is plugged in, the app detects it and offers to keep Windows away from it
+   (take the disk offline + read-only, or disable automount). Accept the recommended option, then click the
+   disk's card (it is marked *RAW* or *OFFLINE*). The app opens it read-only, finds the NTFS volume(s) and reads
+   the hardware data. If the link keeps dropping, press **Stabilize USB…**, apply, and re-plug it.
 2. **Health → Analyze** — read the verdict. It tells you whether the file system is intact (then it is a
    bridge / boot-manager / hardware problem), or which structure is damaged and whether a one-click repair
    applies. Run a *Quick surface scan* to see whether the media itself is failing. Save the report.
@@ -101,6 +103,7 @@ nova4me2 health 2 --surface quick --report health.html --report health.pdf
 nova4me2 repair 2 boot-sector                   (also: backup-boot-sector | gpt | mft-mirror | undo FILE)
 nova4me2 mount 2 R:                             read-only drive letter via WinFsp (Ctrl+C unmounts)
 nova4me2 stabilize-usb [--status|--revert]
+nova4me2 protect 2                              take disk 2 offline + read-only in Windows (undo: --online)
 ```
 
 `<src>` may be a drive number, `\\.\PhysicalDrive2`, `\\.\E:` or a raw image file. Global options:

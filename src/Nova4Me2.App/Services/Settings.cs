@@ -22,6 +22,8 @@ public sealed class Settings
     public bool TwoPassImaging { get; set; } = true;
     public bool HashImaging { get; set; } = true;
     public bool ShowLogPanel { get; set; } = false;
+    public bool MountGuardDismissed { get; set; } = false;
+    public int IoTimeoutSeconds { get; set; } = 30;
 
     public static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Nova4Me2");
     public static string File => Path.Combine(Dir, "settings.json");

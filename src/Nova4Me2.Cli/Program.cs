@@ -42,6 +42,7 @@ public static class Program
                 "repair" or "fix" => Repair(args),
                 "mount" => MountCmd(args),
                 "stabilize-usb" or "usb" => StabilizeUsb(args),
+                "protect" => Protect(args),
                 "cat" => Cat(args),
                 _ => throw new UsageException($"Unknown command '{cmd}'.")
             };
@@ -68,6 +69,7 @@ Usage: nova4me2 <command> [options]
   repair <src> <boot-sector|backup-boot-sector|gpt|mft-mirror|undo FILE> [--volume N] --yes
   mount <src> <letter> [--volume N] [--mft-scan] [--show-system]   (needs WinFsp)
   stabilize-usb [--status|--revert]     Stop Windows from suspending / re-probing the USB enclosure
+  protect <N> [--online] [--status]     Take disk N offline + read-only in Windows (mount manager ignores it; raw reads still work)
 
 <src> is a drive number (0), \\.\PhysicalDrive0, \\.\C:, or a raw image file (.img/.dd).
 Global: --reconnect-timeout SEC (180)  --throttle MB/s  --chunk KB (1024)  --no-keepalive  --log FILE  --verbose  --quiet
@@ -418,6 +420,24 @@ Reports: any of .txt .html .pdf by extension. Nothing is ever written to the sou
             if (!_quiet) Console.Error.Write($"\r  link {dev.State}  reads {session.FileSystem.Reads:N0}  served {Format.Bytes(session.FileSystem.BytesServed)}  reconnects {dev.Stats.Reconnects}   ");
         }
         Console.Error.WriteLine();
+        return 0;
+    }
+
+    private static int Protect(Args a)
+    {
+        if (!OperatingSystem.IsWindows()) throw new UsageException("protect is Windows-only.");
+        int n = DeviceFactory.ParseDriveNumber(a.Pos(1)) ?? throw new UsageException("protect needs a physical drive number.");
+        if (a.Has("status"))
+        {
+            var at = DiskControl.GetAttributes(n);
+            Console.WriteLine($"PhysicalDrive{n}: {(at.Queried ? $"{(at.Offline ? "OFFLINE" : "online")}, {(at.ReadOnly ? "read-only" : "writable")}" : "attributes not available")}; automount {(DiskControl.IsAutomountEnabled() ? "ON" : "off")}");
+            return 0;
+        }
+        if (n == DriveEnumerator.SystemDiskNumber()) throw new Exception("Refusing to change the system disk.");
+        bool online = a.Has("online");
+        DiskControl.SetAttributes(n, offline: !online, readOnly: !online);
+        if (!online) { try { DiskControl.SetAutomount(false); } catch (Exception ex) { Console.Error.WriteLine("  automount: " + ex.Message); } }
+        Console.WriteLine(online ? $"PhysicalDrive{n} is online and writable again." : $"PhysicalDrive{n} is now offline and read-only in Windows; automount disabled. Nova4Me2 can still read it. Undo with: nova4me2 protect {n} --online");
         return 0;
     }
 

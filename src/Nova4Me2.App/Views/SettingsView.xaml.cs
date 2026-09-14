@@ -47,6 +47,8 @@ public partial class SettingsView : UserControl, INovaView
         ChunkBox.Text = s.ChunkKiB.ToString();
         ThrottleBox.Text = s.ThrottleMBps.ToString(System.Globalization.CultureInfo.InvariantCulture);
         KeepaliveBox.IsChecked = s.Keepalive;
+        IoTimeoutBox.Text = s.IoTimeoutSeconds.ToString();
+        GuardBox.IsChecked = !s.MountGuardDismissed;
         DestBox.Text = s.DefaultDestination;
         ColSkip.IsChecked = s.CollisionPolicy == "Skip"; ColOverwrite.IsChecked = s.CollisionPolicy == "Overwrite"; ColRename.IsChecked = s.CollisionPolicy == "Rename";
         VerifyBox.IsChecked = s.VerifyAfterCopy; ZeroFillBox.IsChecked = s.ZeroFillUnreadable; AdsBox.IsChecked = s.CopyAlternateStreams; TimesBox.IsChecked = s.PreserveTimestamps;
@@ -61,6 +63,8 @@ public partial class SettingsView : UserControl, INovaView
         if (int.TryParse(ChunkBox.Text, out int c)) s.ChunkKiB = Math.Clamp(c, 64, 16384);
         if (double.TryParse(ThrottleBox.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double t)) s.ThrottleMBps = Math.Max(0, t);
         s.Keepalive = KeepaliveBox.IsChecked == true;
+        if (int.TryParse(IoTimeoutBox.Text, out int io)) s.IoTimeoutSeconds = Math.Clamp(io, 5, 300);
+        s.MountGuardDismissed = GuardBox.IsChecked != true;
         s.DefaultDestination = DestBox.Text.Trim();
         s.CollisionPolicy = ColOverwrite.IsChecked == true ? "Overwrite" : ColRename.IsChecked == true ? "Rename" : "Skip";
         s.VerifyAfterCopy = VerifyBox.IsChecked == true; s.ZeroFillUnreadable = ZeroFillBox.IsChecked == true; s.CopyAlternateStreams = AdsBox.IsChecked == true; s.PreserveTimestamps = TimesBox.IsChecked == true;
@@ -79,7 +83,7 @@ public partial class SettingsView : UserControl, INovaView
     {
         var fresh = new Settings();
         var s = Ui.State.Settings;
-        s.ReconnectTimeoutSeconds = fresh.ReconnectTimeoutSeconds; s.ChunkKiB = fresh.ChunkKiB; s.ThrottleMBps = fresh.ThrottleMBps; s.Keepalive = fresh.Keepalive; s.DefaultDestination = ""; s.CollisionPolicy = fresh.CollisionPolicy;
+        s.ReconnectTimeoutSeconds = fresh.ReconnectTimeoutSeconds; s.ChunkKiB = fresh.ChunkKiB; s.ThrottleMBps = fresh.ThrottleMBps; s.Keepalive = fresh.Keepalive; s.IoTimeoutSeconds = fresh.IoTimeoutSeconds; s.MountGuardDismissed = false; s.DefaultDestination = ""; s.CollisionPolicy = fresh.CollisionPolicy;
         s.VerifyAfterCopy = fresh.VerifyAfterCopy; s.ZeroFillUnreadable = fresh.ZeroFillUnreadable; s.CopyAlternateStreams = fresh.CopyAlternateStreams; s.PreserveTimestamps = fresh.PreserveTimestamps; s.Theme = fresh.Theme;
         ThemeManager.Apply(s.Theme);
         s.Save();

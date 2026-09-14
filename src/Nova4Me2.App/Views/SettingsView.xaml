@@ -20,8 +20,10 @@
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
-              <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+              <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
             </Grid.RowDefinitions>
+            <TextBlock Text="Per-request I/O time-out (seconds)" VerticalAlignment="Center" Grid.Row="4" />
+            <TextBox x:Name="IoTimeoutBox" Grid.Row="4" Grid.Column="1" Width="120" HorizontalAlignment="Left" Margin="0,3" LostFocus="Save" ToolTip="A request the drive does not answer within this time is cancelled and treated as a failed read" />
             <TextBlock Text="Reconnect time-out (seconds)" VerticalAlignment="Center" Grid.Row="0" />
             <TextBox x:Name="ReconnectBox" Grid.Row="0" Grid.Column="1" Width="120" HorizontalAlignment="Left" Margin="0,3" LostFocus="Save" />
             <TextBlock Text="Read chunk size (KiB)" VerticalAlignment="Center" Grid.Row="1" />
@@ -31,6 +33,7 @@
             <TextBlock Text="Keepalive reads" VerticalAlignment="Center" Grid.Row="3" />
             <CheckBox x:Name="KeepaliveBox" Grid.Row="3" Grid.Column="1" Content="Read one sector every few seconds so the enclosure never idles" Checked="Save" Unchecked="Save" />
           </Grid>
+          <CheckBox x:Name="GuardBox" Content="Offer to keep Windows off RAW / unresponsive disks when they are connected" Checked="Save" Unchecked="Save" Margin="0,8,0,0" />
           <TextBlock Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,0" Text="Connection settings take effect the next time a drive is opened." />
         </StackPanel>
       </Border>

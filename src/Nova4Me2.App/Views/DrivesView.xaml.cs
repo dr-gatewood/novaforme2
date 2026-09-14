@@ -20,6 +20,8 @@ public sealed class DriveCard
     public string Warning { get; init; } = "";
     public string Badge { get; init; } = "";
     public bool IsSystem { get; init; }
+    public bool HasRaw { get; init; }
+    public bool NotResponding { get; init; }
     public Brush BorderBrush { get; set; } = Brushes.Transparent;
     public string Spec => $@"\\.\PhysicalDrive{Number}";
 }
@@ -35,15 +37,23 @@ public partial class DrivesView : UserControl, INovaView
 {
     private bool _loading;
 
+    private bool _guardShownThisSession;
+
     public DrivesView()
     {
         InitializeComponent();
         Ui.State.SourceChanged += () => Dispatcher.BeginInvoke(RefreshVolumes);
+        Ui.Main.DeviceChanged += arrival =>
+        {
+            Ui.Main.Toast(arrival ? "Disk connected" : "Disk removed", arrival ? "Refreshing the drive list…" : "The drive list is being refreshed.");
+            Cards.ItemsSource = null;
+            _ = LoadAsync(promptGuard: arrival);
+        };
     }
 
     public void OnShown() { if (Cards.Items.Count == 0) _ = LoadAsync(); RefreshVolumes(); }
 
-    private async Task LoadAsync()
+    private async Task LoadAsync(bool promptGuard = false)
     {
         if (_loading) return;
         _loading = true;
@@ -56,14 +66,19 @@ public partial class DrivesView : UserControl, INovaView
             var cards = new List<DriveCard>();
             foreach (var d in drives)
             {
-                if (d.OpenError != null) { cards.Add(new DriveCard { Number = d.Number, Model = $"Physical drive {d.Number}", SizeText = "?", Detail = d.OpenError, Badge = "locked" }); continue; }
-                bool raw = d.Volumes.Any(v => v.IsRaw);
+                if (d.OpenError != null)
+                {
+                    cards.Add(new DriveCard { Number = d.Number, Model = $"Physical drive {d.Number}", SizeText = "?", Detail = d.OpenError, Badge = d.ProbeTimedOut ? "hung" : "locked", NotResponding = d.ProbeTimedOut,
+                        VolumesText = string.Join("\n", d.Volumes.Select(v => "• " + v.Display)), Warning = d.ProbeTimedOut ? "Windows is holding this disk busy (mount attempts). Take it offline below or re-plug it, then refresh." : "" });
+                    continue;
+                }
+                bool raw = d.Volumes.Any(v => v.IsRaw || v.ProbeTimedOut);
                 string vols = d.Volumes.Count == 0 ? "No volumes visible to Windows" : string.Join("\n", d.Volumes.Select(v => "• " + v.Display));
                 cards.Add(new DriveCard
                 {
                     Number = d.Number, Model = d.Model, SizeText = Format.Bytes(d.Length), IsSystem = d.IsSystemDisk,
                     Detail = $"{d.Storage.BusTypeName}{(d.Storage.IsUsb ? " (USB bridge)" : "")} · {d.SectorSize} B sectors · S/N {(d.Storage.Serial.Length > 0 ? d.Storage.Serial : "n/a")} · FW {d.Storage.Revision}",
-                    VolumesText = vols, Badge = d.IsSystemDisk ? "SYSTEM" : raw ? "RAW" : $"disk {d.Number}",
+                    VolumesText = vols + (d.Attributes.Queried && d.Attributes.Offline ? "\n• Offline in Windows (protected)" : ""), Badge = d.IsSystemDisk ? "SYSTEM" : d.Attributes.Offline ? "OFFLINE" : raw ? "RAW" : $"disk {d.Number}", HasRaw = raw,
                     Warning = raw ? "Windows cannot read a volume on this disk (RAW). Nova4Me2 reads it directly." : d.IsSystemDisk ? "This is the Windows system disk." : ""
                 });
             }
@@ -71,9 +86,28 @@ public partial class DrivesView : UserControl, INovaView
             EmptyText.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             EmptyText.Text = "No drives found. Run Nova4Me2 as Administrator.";
             Highlight();
+            if (promptGuard) MaybeShowGuard(cards.FirstOrDefault(c => (c.HasRaw || c.NotResponding) && !c.IsSystem));
         }
         catch (Exception ex) { EmptyText.Text = "Drive scan failed: " + ex.Message; }
         finally { _loading = false; }
+    }
+
+    /// <summary>Offer to keep Windows away from a RAW / hung disk. Shown at most once per session unless the user asks again.</summary>
+    private async void MaybeShowGuard(DriveCard? card, bool force = false)
+    {
+        if (card == null || !OperatingSystem.IsWindows()) return;
+        if (!force && (Ui.State.Settings.MountGuardDismissed || _guardShownThisSession)) return;
+        int num = card.Number;
+        bool alreadyOffline = await Task.Run(() => Core.Devices.Windows.DiskControl.GetAttributes(num).Offline);
+        if (alreadyOffline && !force) return;
+        _guardShownThisSession = true;
+        var dlg = new Dialogs.MountGuardDialog(card.Number, $"{card.Model}, {card.SizeText}") { Owner = Ui.Main };
+        if (dlg.ShowDialog() == true)
+        {
+            Ui.Main.Toast(dlg.Choice == Dialogs.MountGuardChoice.TakeOffline ? "Disk protected" : "Automount disabled", dlg.Choice == Dialogs.MountGuardChoice.TakeOffline ? "Windows will leave this disk alone. Open it here to start recovering." : "Windows will stop mounting newly connected volumes.");
+            Cards.ItemsSource = null;
+            _ = LoadAsync();
+        }
     }
 
     private void Highlight()
@@ -87,6 +121,8 @@ public partial class DrivesView : UserControl, INovaView
     {
         if ((sender as FrameworkElement)?.DataContext is not DriveCard c) return;
         if (c.Badge == "locked") { Ui.Main.Toast("Cannot open drive", c.Detail, true); return; }
+        if (c.NotResponding) { MaybeShowGuard(c, force: true); Ui.Main.Toast("Disk not responding", "Windows is busy with this disk. Protect it (offline) or re-plug it, then refresh.", true); return; }
+        if (c.HasRaw && !c.IsSystem) MaybeShowGuard(c);
         await OpenAsync(c.Spec, $"{c.Model} (disk {c.Number})", c.Number);
         Highlight();
     }
@@ -112,8 +148,49 @@ public partial class DrivesView : UserControl, INovaView
         VolumeList.ItemsSource = st.Volumes.Select(v => new VolumeRow { Candidate = v }).ToList();
         VolumeList.SelectedIndex = st.SelectedCandidate != null ? st.Volumes.IndexOf(st.SelectedCandidate) : -1;
         VolumeList.SelectionChanged += VolumeList_SelectionChanged;
+        _ = UpdateProtectUiAsync();
         var t = st.Partitions;
         PartitionsText.Text = t == null ? "" : $"Partition table: {t.Scheme}{(t.UsedBackupGpt ? " (recovered from backup GPT)" : "")} · " + string.Join(" · ", t.Partitions.Select(p => $"#{p.Index} {p.TypeName} {Format.Bytes(p.Length)}")) + (t.Problems.Count > 0 ? $"\n{string.Join("\n", t.Problems)}" : "");
+    }
+
+    private async Task UpdateProtectUiAsync()
+    {
+        var st = Ui.State;
+        bool win = OperatingSystem.IsWindows() && st.DriveNumber is not null;
+        ProtectButton.Visibility = OnlineButton.Visibility = win ? Visibility.Visible : Visibility.Collapsed;
+        if (!win) { ProtectText.Text = ""; return; }
+        int num = st.DriveNumber!.Value;
+        ProtectText.Text = "Checking Windows disk state…";
+        var a = await Task.Run(() => Core.Devices.Windows.DiskControl.GetAttributes(num));
+        bool auto = Core.Devices.Windows.DiskControl.IsAutomountEnabled();
+        if (st.DriveNumber != num) return;
+        ProtectText.Text = $"Windows: disk {(a.Offline ? "OFFLINE" : "online")}, {(a.ReadOnly ? "read-only" : "writable")} · automount {(auto ? "ON" : "off")}";
+        ProtectButton.IsEnabled = !(a.Offline && a.ReadOnly);
+        OnlineButton.IsEnabled = a.Offline || a.ReadOnly;
+    }
+
+    private async void Protect_Click(object sender, RoutedEventArgs e)
+    {
+        if (Ui.State.DriveNumber is not { } n) return;
+        try
+        {
+            await Task.Run(() => Core.Devices.Windows.DiskControl.SetAttributes(n, offline: true, readOnly: true));
+            Ui.Main.Toast("Disk protected", "Windows will no longer mount or write to this disk. Reads through Nova4Me2 continue to work.");
+        }
+        catch (Exception ex) { Ui.Main.Toast("Could not take the disk offline", ex.Message, true); }
+        await UpdateProtectUiAsync();
+    }
+
+    private async void Online_Click(object sender, RoutedEventArgs e)
+    {
+        if (Ui.State.DriveNumber is not { } n) return;
+        try
+        {
+            await Task.Run(() => Core.Devices.Windows.DiskControl.SetAttributes(n, offline: false, readOnly: false));
+            Ui.Main.Toast("Disk online", "Windows will treat the disk normally again (it may start probing the RAW volume).");
+        }
+        catch (Exception ex) { Ui.Main.Toast("Could not bring the disk online", ex.Message, true); }
+        await UpdateProtectUiAsync();
     }
 
     private async void VolumeList_SelectionChanged(object sender, SelectionChangedEventArgs e)

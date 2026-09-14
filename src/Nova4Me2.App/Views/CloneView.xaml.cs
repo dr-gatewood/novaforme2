@@ -23,7 +23,7 @@ public partial class CloneView : UserControl, INovaView
         Ui.State.SourceChanged += () => Dispatcher.BeginInvoke(RefreshSource);
     }
 
-    public void OnShown() { RefreshSource(); if (_drives.Count == 0) RefreshDrives(); }
+    public void OnShown() { RefreshSource(); if (_drives.Count == 0) _ = RefreshDrivesAsync(); }
 
     private void RefreshSource()
     {
@@ -37,14 +37,17 @@ public partial class CloneView : UserControl, INovaView
         if (FilePath.Text.Length == 0) FilePath.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), $"{Extractor.SafeName(st.SourceName)}.img");
     }
 
-    private void RefreshDrives()
+    private async Task RefreshDrivesAsync()
     {
         DriveCombo.Items.Clear();
         _drives.Clear();
         if (!OperatingSystem.IsWindows()) return;
+        DriveCombo.Items.Add("Scanning drives…");
         try
         {
-            foreach (var d in DriveEnumerator.List())
+            var list = await Task.Run(() => DriveEnumerator.List());
+            DriveCombo.Items.Clear();
+            foreach (var d in list)
             {
                 if (d.OpenError != null) continue;
                 _drives.Add(d);
@@ -55,7 +58,7 @@ public partial class CloneView : UserControl, INovaView
         catch (Exception ex) { TargetWarning.Text = "Drive list failed: " + ex.Message; }
     }
 
-    private void RefreshDrives_Click(object sender, RoutedEventArgs e) => RefreshDrives();
+    private void RefreshDrives_Click(object sender, RoutedEventArgs e) => _ = RefreshDrivesAsync();
     private void Scope_Changed(object sender, RoutedEventArgs e) { if (IsLoaded) PartitionCombo.IsEnabled = ScopePartition.IsChecked == true; }
 
     private void Target_Changed(object sender, RoutedEventArgs e)
@@ -115,7 +118,7 @@ public partial class CloneView : UserControl, INovaView
                 if (d.Number == st.DriveNumber) { Ui.Main.Toast("Blocked", "Source and target are the same drive.", true); return; }
                 if (d.Length < length) { Ui.Main.Toast("Target too small", $"Target is {Format.Bytes(d.Length)}, source range is {Format.Bytes(length)}.", true); return; }
                 if (!Ui.Main.ConfirmTyped("Overwrite physical drive", $"ALL DATA on [{d.Number}] {d.Model} ({Format.Bytes(d.Length)}) will be destroyed and replaced with a sector-by-sector copy of {label} from {st.SourceName}.", "CONFIRM")) return;
-                target = DeviceFactory.Open(d.DevicePath, new ResilienceOptions { Keepalive = null }, writable: true);
+                target = await Task.Run(() => (IBlockDevice)DeviceFactory.Open(d.DevicePath, new ResilienceOptions { Keepalive = null }, writable: true));
                 targetDesc = $"[{d.Number}] {d.Model}";
             }
         }

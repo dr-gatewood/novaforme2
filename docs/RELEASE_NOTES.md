@@ -1,22 +1,19 @@
-# Nova4Me2 v1.0.0 — raw NTFS recovery for drives Windows calls RAW
+# Nova4Me2 v1.0.1
 
-First release. Windows x64, self-contained (no .NET install needed). Both executables request Administrator rights (raw disk access).
+Fixes from the first real-world run against a RAW Samsung 970 EVO in a USB enclosure.
+
+## Fixed
+- **The app could freeze when the enclosure was plugged in.** Windows kept trying to auto-mount the RAW volume and held the disk busy; several app paths waited on that. All device requests (reads, writes, IOCTLs, SMART pass-through) now use overlapped I/O with a hard time-out and cancellation, drive/volume probing during enumeration runs on throwaway threads with a time budget, and closing a device never blocks the UI thread. Nothing the app does depends on Windows mounting anything.
+- Application icon: the taskbar/window/EXE icon now matches the in-app Nova4Me2 logo.
+
+## Added
+- **Mount guard.** When a disk with a RAW or unresponsive volume is connected, the app offers to take it offline and read-only in Windows (mount manager ignores it; raw reads keep working) or to disable automount. Both are reversible from the Drives view; "Don't ask again" is available in Settings.
+- Drives view shows Windows' disk state (online/offline, writable/read-only, automount) with **Keep Windows off this disk** and **Bring back online** buttons; disks that Windows is holding busy are shown as "not responding" instead of stalling the list.
+- Automatic drive-list refresh on device arrival/removal.
+- CLI: `nova4me2 protect <N> [--online] [--status]`.
+- Settings: per-request I/O time-out.
 
 ## Downloads
-- **Nova4Me2-v1.0.0-win-x64.zip** — desktop app. Unzip anywhere and run `Nova4Me2.exe`.
-- **nova4me2-cli-v1.0.0-win-x64.zip** — single-file command-line tool `nova4me2.exe`.
-- **SHA256SUMS.txt** — checksums.
-- Optional: install [WinFsp](https://winfsp.dev/rel/) to enable *Mount as drive letter*.
-
-## Highlights
-- Reads NTFS directly from sectors (boot sector / backup boot sector / signature scan, MFT, attribute lists, compression, sparse, ADS, hard links, full-MFT scan with deleted files) — a RAW volume in Windows is fine.
-- Keeps flaky USB enclosures usable: chunked reads, automatic re-attach after a link drop (even under a new drive number), keepalive, throttling, plus a revertible **Stabilize USB** helper.
-- Read-only drive-letter mount through WinFsp; multi-select copy; drag-and-drop into Explorer.
-- Forensic image/clone (two-pass bad-sector strategy, SHA-256/MD5, verify, resume, block map).
-- Health analysis with a structural score and a **boot-record-fix likelihood** estimate; NVMe/ATA SMART; surface scan.
-- Reversible repairs (boot sector from backup, backup boot sector, GPT from backup, $MFT from $MFTMirr) with sector backups and undo.
-- Firmware reference (incl. Samsung 970 EVO read-only lock notes), CPU-Z style drive info, TXT/HTML/PDF reports, four themes, F1 context help.
-
-## Notes
-- Built by the tagged CI run on a Windows runner.
-- The Windows device layer, WinFsp mount and drag-out have not yet been exercised on physical hardware — see the README's limitations section and please report issues.
+- `Nova4Me2-v1.0.1-win-x64.zip` — desktop app (unzip, run `Nova4Me2.exe`).
+- `nova4me2-cli-v1.0.1-win-x64.zip` — command-line tool.
+- `SHA256SUMS.txt`.

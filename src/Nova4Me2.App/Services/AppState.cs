@@ -47,7 +47,8 @@ public sealed class AppState
         ReconnectTimeout = TimeSpan.FromSeconds(Math.Max(5, Settings.ReconnectTimeoutSeconds)),
         MaxChunk = Math.Max(64, Settings.ChunkKiB) * 1024,
         MaxBytesPerSecond = (long)(Settings.ThrottleMBps * 1024 * 1024),
-        Keepalive = Settings.Keepalive ? TimeSpan.FromSeconds(4) : null
+        Keepalive = Settings.Keepalive ? TimeSpan.FromSeconds(4) : null,
+        IoTimeout = TimeSpan.FromSeconds(Math.Clamp(Settings.IoTimeoutSeconds, 5, 300))
     };
 
     /// <summary>Open a physical drive (Windows) or an image file. Runs on a worker thread.</summary>
@@ -119,9 +120,11 @@ public sealed class AppState
     /// <summary>Re-open the device for writing (repairs / clone target checks). Returns a separate writable handle; caller disposes.</summary>
     public ResilientBlockDevice OpenWritable() => DeviceFactory.Open(SourceSpec, new ResilienceOptions { Keepalive = null, ReconnectTimeout = TimeSpan.FromSeconds(60) }, writable: true);
 
+    /// <summary>Detach from the current device. Never blocks the caller: handles are released on a worker thread (a read stuck in a hung USB bridge may take up to the I/O time-out to let go).</summary>
     public void Close()
     {
-        try { Mount?.Dispose(); } catch { }
+        var mount = Mount;
+        var d = Device;
         Mount = null;
         Source = null;
         Volume = null;
@@ -131,12 +134,20 @@ public sealed class AppState
         Partitions = null;
         Hardware = null;
         LastHealth = null;
-        var d = Device;
         Device = null;
-        try { d?.Dispose(); } catch { }
         LinkState = ConnectionState.Closed;
         SourceSpec = "";
         SourceName = "";
         DriveNumber = null;
+        if (mount != null || d != null)
+            _ = Task.Run(() => { try { mount?.Dispose(); } catch { } try { d?.Dispose(); } catch { } });
+    }
+
+    /// <summary>Windows-side protection of the drive being recovered: offline (mount manager ignores it) and read-only.</summary>
+    public bool IsWindowsProtected(int driveNumber)
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        var a = DiskControl.GetAttributes(driveNumber);
+        return a.Offline && a.ReadOnly;
     }
 }

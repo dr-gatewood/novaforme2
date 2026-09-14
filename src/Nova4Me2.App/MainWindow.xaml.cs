@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using System.Windows.Interop;
 using Nova4Me2.App.Services;
 using Nova4Me2.App.Views;
 using Nova4Me2.Core.Devices;
@@ -19,6 +20,9 @@ public partial class MainWindow : Window
     private UIElement? _currentElement;
     private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private DispatcherTimer? _toastTimer;
+    private DispatcherTimer? _deviceDebounce;
+    /// <summary>Raised (debounced, on the UI thread) when Windows reports a disk/volume arrival or removal.</summary>
+    public event Action<bool>? DeviceChanged;
 
     private static readonly (string Key, string Title, string Icon)[] Nav =
     {
@@ -49,11 +53,32 @@ public partial class MainWindow : Window
         PreviewKeyDown += (_, e) => { if (e.Key == Key.F1) { ToggleHelp(); e.Handled = true; } else if (e.Key == Key.Escape && HelpFlyout.Visibility == Visibility.Visible) { HideHelp(); e.Handled = true; } };
         if (State.Settings.ShowLogPanel) LogRow.Height = new GridLength(140);
         Loaded += (_, _) => Navigate("Drives");
+        SourceInitialized += (_, _) => HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WndProc);
+        try { Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/nova4me2.ico")); } catch { }
         Closing += (_, e) =>
         {
             if (State.Jobs.AnyActive && MessageBox.Show(this, "A recovery job is still running. Quit anyway?", "Nova4Me2", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) { e.Cancel = true; return; }
             State.Settings.Save();
         };
+    }
+
+    private const int WM_DEVICECHANGE = 0x0219, DBT_DEVICEARRIVAL = 0x8000, DBT_DEVICEREMOVECOMPLETE = 0x8004;
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WM_DEVICECHANGE)
+        {
+            int ev = wParam.ToInt32();
+            if (ev == DBT_DEVICEARRIVAL || ev == DBT_DEVICEREMOVECOMPLETE)
+            {
+                bool arrival = ev == DBT_DEVICEARRIVAL;
+                _deviceDebounce?.Stop();
+                _deviceDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+                _deviceDebounce.Tick += (_, _) => { _deviceDebounce!.Stop(); DeviceChanged?.Invoke(arrival); };
+                _deviceDebounce.Start();
+            }
+        }
+        return IntPtr.Zero; // never block the message loop; all reactions are async
     }
 
     private void BuildNav()

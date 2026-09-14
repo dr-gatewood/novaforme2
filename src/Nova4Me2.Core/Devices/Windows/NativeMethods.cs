@@ -14,6 +14,15 @@ internal static partial class NativeMethods
     public const uint OPEN_EXISTING = 3;
     public const uint FILE_ATTRIBUTE_NORMAL = 0x80;
     public const uint FILE_FLAG_NO_BUFFERING = 0x20000000;
+    public const uint FILE_FLAG_OVERLAPPED = 0x40000000;
+    public const int ERROR_IO_PENDING = 997;
+    public const int ERROR_OPERATION_ABORTED = 995;
+    public const int ERROR_SEM_TIMEOUT = 121;
+    public const uint WAIT_TIMEOUT = 258;
+    public const uint IOCTL_DISK_SET_DISK_ATTRIBUTES = 0x0007C0F4;
+    public const uint IOCTL_DISK_GET_DISK_ATTRIBUTES_EX = 0x000700F0;
+    /// <summary>Default time-out for control requests to a device (a hung USB bridge otherwise blocks for the full disk time-out).</summary>
+    public static int IoctlTimeoutMs = 15000;
 
     public const uint IOCTL_DISK_GET_LENGTH_INFO = 0x0007405C;
     public const uint IOCTL_DISK_GET_DRIVE_GEOMETRY_EX = 0x000700A0;
@@ -67,6 +76,69 @@ internal static partial class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool FlushFileBuffers(SafeFileHandle hFile);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern unsafe bool ReadFile(SafeFileHandle hFile, byte* lpBuffer, uint nNumberOfBytesToRead, IntPtr lpNumberOfBytesRead, NativeOverlapped* lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern unsafe bool WriteFile(SafeFileHandle hFile, byte* lpBuffer, uint nNumberOfBytesToWrite, IntPtr lpNumberOfBytesWritten, NativeOverlapped* lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern unsafe bool DeviceIoControl(SafeFileHandle hDevice, uint dwIoControlCode, IntPtr lpInBuffer, uint nInBufferSize,
+        IntPtr lpOutBuffer, uint nOutBufferSize, IntPtr lpBytesReturned, NativeOverlapped* lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern unsafe bool GetOverlappedResult(SafeFileHandle hFile, NativeOverlapped* lpOverlapped, out uint lpNumberOfBytesTransferred, bool bWait);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern unsafe bool CancelIoEx(SafeFileHandle hFile, NativeOverlapped* lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr CreateEventW(IntPtr lpEventAttributes, bool bManualReset, bool bInitialState, IntPtr lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+
+    /// <summary>
+    /// Runs one overlapped I/O request with a hard time-out. Works for handles opened with or without FILE_FLAG_OVERLAPPED
+    /// (without it the call simply completes synchronously). On time-out the request is cancelled and an IOException with
+    /// ERROR_SEM_TIMEOUT is thrown, so a hung USB bridge can never block a thread for longer than <paramref name="timeoutMs"/>.
+    /// </summary>
+    public static unsafe uint RunOverlapped(SafeFileHandle h, long offset, int timeoutMs, string what, Func<IntPtr, bool> issue)
+    {
+        NativeOverlapped ov = default;
+        ov.OffsetLow = (int)(offset & 0xFFFFFFFF);
+        ov.OffsetHigh = (int)(offset >> 32);
+        ov.EventHandle = CreateEventW(IntPtr.Zero, true, false, IntPtr.Zero);
+        if (ov.EventHandle == IntPtr.Zero) throw new IOException("CreateEvent failed", Marshal.GetLastWin32Error());
+        try
+        {
+            NativeOverlapped* p = &ov;
+            bool ok = issue((IntPtr)p);
+            if (!ok)
+            {
+                int err = Marshal.GetLastWin32Error();
+                if (err != ERROR_IO_PENDING) throw new IOException($"{what} failed: {ErrorText(err)}", err);
+                uint w = WaitForSingleObject(ov.EventHandle, timeoutMs <= 0 ? 0xFFFFFFFF : (uint)timeoutMs);
+                if (w == WAIT_TIMEOUT)
+                {
+                    CancelIoEx(h, p);
+                    GetOverlappedResult(h, p, out _, true); // wait for the cancellation to land before the stack frame goes away
+                    throw new IOException($"{what} timed out after {timeoutMs} ms (device not responding).", ERROR_SEM_TIMEOUT);
+                }
+            }
+            if (!GetOverlappedResult(h, p, out uint transferred, true))
+            {
+                int err = Marshal.GetLastWin32Error();
+                throw new IOException($"{what} failed: {ErrorText(err)}", err);
+            }
+            return transferred;
+        }
+        finally { CloseHandle(ov.EventHandle); }
+    }
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern SafeFindVolumeHandle FindFirstVolumeW(System.Text.StringBuilder lpszVolumeName, uint cchBufferLength);
 
@@ -98,8 +170,8 @@ internal static partial class NativeMethods
 
     public static string ErrorText(int err) => $"Win32 error {err}: {new System.ComponentModel.Win32Exception(err).Message}";
 
-    /// <summary>Generic DeviceIoControl helper returning the output buffer (or null on failure, with lastError set).</summary>
-    public static byte[]? Ioctl(SafeFileHandle h, uint code, ReadOnlySpan<byte> input, int outSize, out int lastError)
+    /// <summary>Generic DeviceIoControl helper with a time-out; returns the output buffer (or null on failure, with lastError set).</summary>
+    public static unsafe byte[]? Ioctl(SafeFileHandle h, uint code, ReadOnlySpan<byte> input, int outSize, out int lastError, int? timeoutMs = null)
     {
         lastError = 0;
         IntPtr pin = IntPtr.Zero, pout = IntPtr.Zero;
@@ -107,11 +179,13 @@ internal static partial class NativeMethods
         {
             if (input.Length > 0) { pin = Marshal.AllocHGlobal(input.Length); input.CopyTo(AsSpan(pin, input.Length)); }
             if (outSize > 0) pout = Marshal.AllocHGlobal(outSize);
-            if (!DeviceIoControl(h, code, pin, (uint)input.Length, pout, (uint)outSize, out uint ret, IntPtr.Zero))
+            uint ret;
+            try
             {
-                lastError = Marshal.GetLastWin32Error();
-                return null;
+                int inLen = input.Length;
+                ret = RunOverlapped(h, 0, timeoutMs ?? IoctlTimeoutMs, $"IOCTL 0x{code:X}", ovp => DeviceIoControl(h, code, pin, (uint)inLen, pout, (uint)outSize, IntPtr.Zero, (NativeOverlapped*)ovp));
             }
+            catch (IOException ex) { lastError = ex.HResult; return null; }
             var result = new byte[Math.Min(ret, (uint)outSize)];
             if (result.Length > 0) Marshal.Copy(pout, result, 0, result.Length);
             return result;

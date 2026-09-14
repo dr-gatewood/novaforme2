@@ -1,0 +1,30 @@
+<Window x:Class="Nova4Me2.App.Dialogs.MountGuardDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Windows is trying to mount this drive" Width="640" SizeToContent="Height" WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="{DynamicResource Bg}" Foreground="{DynamicResource Text}" FontFamily="{StaticResource UiFont}" FontSize="13" ShowInTaskbar="False" Topmost="True">
+  <StackPanel Margin="24">
+    <TextBlock Text="Windows is trying to auto-mount a drive" Style="{StaticResource H1}" FontSize="18" />
+    <TextBlock x:Name="DriveText" Style="{StaticResource Body}" Margin="0,6,0,0" />
+    <TextBlock Style="{StaticResource Muted}" Margin="0,10,0,14" Text="Every time the enclosure is (re)connected, Windows tries to mount the volume, fails (&quot;RAW&quot;, &quot;The directory is invalid&quot;), retries, and keeps the disk busy for minutes. Nova4Me2 reads the disk directly and does not need Windows to mount anything. Choose how to keep Windows out of the way:" />
+    <Border Style="{StaticResource CardAlt}" Margin="0,0,0,8">
+      <StackPanel>
+        <TextBlock Text="Take the disk offline and read-only (recommended)" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Muted}" FontSize="12" Text="The mount manager ignores an offline disk completely, Explorer stops probing it, and the read-only flag guarantees Windows never writes to it. Raw reads by Nova4Me2 keep working. Reversible with &quot;Bring back online&quot; in the Drives view (or Disk Management)." />
+      </StackPanel>
+    </Border>
+    <Border Style="{StaticResource CardAlt}" Margin="0,0,0,8">
+      <StackPanel>
+        <TextBlock Text="Only disable automount" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Muted}" FontSize="12" Text="mountvol /N: Windows stops assigning letters / mounting new volumes system-wide until re-enabled (Stabilize USB → Revert, or mountvol /E). Lighter, but Explorer may still poke the volume." />
+      </StackPanel>
+    </Border>
+    <CheckBox x:Name="DontAsk" Content="Don't ask again (you can still do this from the Drives view)" Margin="0,4,0,12" />
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button Content="Not now" Click="Ignore_Click" IsCancel="True" />
+      <Button Content="Disable automount" Click="Automount_Click" />
+      <Button Content="Take disk offline + read-only" Style="{StaticResource AccentButton}" Click="Offline_Click" Margin="0" />
+    </StackPanel>
+    <TextBlock x:Name="ResultText" Style="{StaticResource Muted}" Margin="0,10,0,0" />
+  </StackPanel>
+</Window>
