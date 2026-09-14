@@ -1,6 +1,7 @@
 # Nova4Me2 v1.0.3
 
 ## Added
+- **Analysis / Forensics tab** (magnifying glass): named project folders for extractions; alternate-data-stream scanner with content classification; signature-based file carving with exact-length parsing (unallocated space, whole volume/disk, or inside a single file); embedded-data and steganography analysis (appended payloads, nested files, entropy profile, PNG/JPEG container checks, LSB chi-square with LSB-plane export); Sleuth Kit-style tools (fsstat, istat, icat, ils, ffind, blkstat/blkcat with cluster owner map, blkls, fls to CSV/body file, mactime timeline, file slack, $UsnJrnl change journal). Same tools on the CLI under `nova4me2 forensics`.
 - **VHD output.** Clone/Image can write the image as a fixed-size VHD (raw image + footer) so Windows Disk Management can attach it (Action → Attach VHD, tick Read-only) and give the recovered volume a normal drive letter. A "Convert existing .img to VHD" button and `nova4me2 vhd <image>` handle images made earlier; `.vhd` files open in Nova4Me2 like raw images.
 
 - Wordmark now reads NoVa4Me2 with the NVMe2 letters in white and the rest in the accent colour.

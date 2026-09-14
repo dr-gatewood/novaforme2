@@ -59,6 +59,27 @@ A non-destructive check of the disk and its NTFS structures, plus the drive's ow
 - Surface scan reads the disk (quick = a sample, full = every sector) and maps unreadable and slow areas.
 - SMART / NVMe health is available for natively attached drives; most USB bridges do not forward these commands.
 - Reports: save everything as TXT, HTML or PDF.",
+        ["Forensics"] = @"# Analysis / Forensics
+Deeper analysis of the volume (or of any file / image), with everything extracted into a named project folder.
+
+# Project
+Name a project and press Start. Extractions go to Projects\<name>\ads, carved, stego and tsk under the application folder (or the per-user app data folder if the install folder is read-only). Open folder shows it in Explorer; activity.log records every extraction.
+
+# Alternate data streams
+Every named $DATA stream on the volume, classified by content (Zone.Identifier download marks, hidden files with a recognised signature, text, encrypted-looking data). Extract selected or all.
+
+# File carving
+Signature (magic bytes) based recovery with exact-length parsing for formats that allow it (ZIP/Office, PDF, PNG, JPEG, MP4, RIFF, BMP, PE, SQLite, 7z, ICO…).
+- Unallocated space: deleted files whose clusters have not been reused (the classic recovery case).
+- Whole volume / whole disk: everything, including live files and slack.
+- Inside one file: nested/embedded files at any byte offset (a ZIP hidden in a JPEG, an executable inside a document).
+- Confidence: high = length parsed from the header, medium = footer found, low = size capped (the format has no end marker).
+
+# Embedded data & steganography
+Analyse any file: appended payloads after the format's logical end, embedded files, entropy profile, PNG chunk and JPEG segment anomalies, and an LSB chi-square test for BMP/PNG images (plus LSB-plane export). Extractable findings can be written out individually or all at once.
+
+# Sleuth Kit tools
+Equivalents of fsstat, istat, icat, ils, ffind, blkstat/blkcat, blkls, fls (CSV / body file), mactime timeline, file-slack scanning and the $UsnJrnl change journal. Build the cluster map once to have blkstat name the file that owns a cluster. Body files and CSVs feed straight into mactime, Plaso or Timesketch.",
         ["Repair"] = @"# Repair
 Only the well-understood, reversible fixes are automated. Every write is preceded by a backup of the exact sectors being replaced; Undo puts them back.
 
