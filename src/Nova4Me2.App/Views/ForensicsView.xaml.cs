@@ -86,6 +86,7 @@ public partial class ForensicsView : UserControl, INovaView
     private DecodedImage? _stegoImage;
     private ClusterOwnerMap? _owners;
     private BadSectorReport? _badReport;
+    private CancellationTokenSource? _badCts;
     private List<NtfsForensics.SlackEntry> _slack = new();
 
     public ForensicsView()
@@ -121,17 +122,43 @@ public partial class ForensicsView : UserControl, INovaView
         if (dev == null) { Ui.Main.Toast("Open the image or drive first", "Select the cloned image in the drive selector, then analyse its log.", true); return; }
         string path = BadLogPath.Text.Trim();
         if (path.Length == 0 || !File.Exists(path)) { Ui.Main.Toast("No log", "Pick the .badsectors.txt written next to the image.", true); return; }
-        BadRun.IsEnabled = false;
-        BadStatus.Text = "reading log…";
+        BadRun.IsEnabled = false; BadStop.IsEnabled = true;
+        BadStatus.Text = "";
+        BadHeadline.Text = "Analysing… on a large image this takes a while: every MFT record is read once to learn which file owns each cluster.";
+        BadVerdict.Text = "";
+        BadList.ItemsSource = null; BadDetail.Text = "";
+        BadProgressCard.Visibility = Visibility.Visible;
+        Animations.FadeIn(BadProgressCard);
+        BadPhase.Text = "Reading the log…"; BadPercent.Text = ""; BadElapsed.Text = "";
+        BadBar.IsIndeterminate = true; BadBar.Value = 0;
+        Animations.Pulse(BadPhase);
+        var started = DateTime.UtcNow;
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        timer.Tick += (_, _) => BadElapsed.Text = $"elapsed {Format.Duration(DateTime.UtcNow - started)}";
+        timer.Start();
         var table = Ui.State.Partitions; var vols = Ui.State.Volumes;
+        _badCts = new CancellationTokenSource();
+        var ct = _badCts.Token;
         try
         {
-            var prog = new Progress<string>(m => BadStatus.Text = m);
+            var prog = new Progress<BadSectorProgress>(m =>
+            {
+                BadPhase.Text = m.Phase;
+                if (m.Determinate)
+                {
+                    if (BadBar.IsIndeterminate) BadBar.IsIndeterminate = false;
+                    Animations.Grow(BadBar, m.Fraction * 100);
+                    BadPercent.Text = m.Percent + "%";
+                    var el = DateTime.UtcNow - started;
+                    if (m.Fraction > 0.02 && m.Fraction < 1) BadElapsed.Text = $"elapsed {Format.Duration(el)} · about {Format.Duration(TimeSpan.FromSeconds(el.TotalSeconds / m.Fraction * (1 - m.Fraction)))} left in this step";
+                }
+                else { BadBar.IsIndeterminate = true; BadPercent.Text = ""; }
+            });
             var report = await Task.Run(() =>
             {
                 var log = BadSectorLog.Load(path, dev.SectorSize);
-                return BadSectorAnalyzer.Analyze(dev, log, table, vols, prog);
-            });
+                return BadSectorAnalyzer.Analyze(dev, log, table, vols, prog, ct);
+            }, ct);
             _badReport = report;
             BadHeadline.Text = report.Headline;
             BadVerdict.Text = report.Verdict;
@@ -144,9 +171,19 @@ public partial class ForensicsView : UserControl, INovaView
             BadStatus.Text = $"{report.TotalSectors:N0} sectors ({Format.Bytes(report.TotalBytes)}) in {report.RangeCount:N0} ranges — {report.UserFilesAffected} file(s) with lost data";
             Ui.Main.Toast("Bad-sector analysis", report.Headline, report.UserFilesAffected > 0);
         }
-        catch (Exception ex) { BadStatus.Text = "failed"; Ui.Main.Toast("Bad-sector analysis failed", ex.GetBaseException().Message, true); }
-        finally { BadRun.IsEnabled = true; }
+        catch (OperationCanceledException) { BadStatus.Text = "stopped"; BadHeadline.Text = "Analysis stopped."; }
+        catch (Exception ex) { BadStatus.Text = "failed"; BadHeadline.Text = "Analysis failed: " + ex.GetBaseException().Message; Ui.Main.Toast("Bad-sector analysis failed", ex.GetBaseException().Message, true); }
+        finally
+        {
+            timer.Stop();
+            Animations.StopPulse(BadPhase);
+            BadProgressCard.Visibility = Visibility.Collapsed;
+            BadRun.IsEnabled = true; BadStop.IsEnabled = false;
+            _badCts?.Dispose(); _badCts = null;
+        }
     }
+
+    private void BadStop_Click(object sender, RoutedEventArgs e) => _badCts?.Cancel();
 
     private void BadSave_Click(object sender, RoutedEventArgs e)
     {
@@ -450,7 +487,8 @@ public partial class ForensicsView : UserControl, INovaView
     private void BuildOwners_Click(object sender, RoutedEventArgs e)
     {
         if (Vol() is not { } v) return;
-        _ = RunTool("cluster owner map", () => { _owners = ClusterOwnerMap.Build(v); return $"Cluster owner map built: {_owners.Count:N0} runs indexed. blkstat now reports which file owns a cluster."; });
+        var prog = new Progress<(long Done, long Total)>(p => TskStatus.Text = $"cluster owner map… indexing MFT records {p.Done:N0} of {p.Total:N0} ({(p.Total > 0 ? p.Done * 100 / p.Total : 0)}%)");
+        _ = RunTool("cluster owner map", () => { _owners = ClusterOwnerMap.Build(v, prog); return $"Cluster owner map built: {_owners.Count:N0} runs indexed. blkstat now reports which file owns a cluster."; });
     }
 
     private void BlkStat_Click(object sender, RoutedEventArgs e)

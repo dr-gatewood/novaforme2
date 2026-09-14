@@ -246,6 +246,15 @@ public sealed class BadSectorReport
     private static string Csv(string s) => s.Contains(',') || s.Contains('"') || s.Contains('\n') ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;
 }
 
+/// <summary>Progress of a bad-sector analysis: the current phase and, when known, how far through it we are.</summary>
+public sealed record BadSectorProgress(string Phase, long Done, long Total)
+{
+    public bool Determinate => Total > 0;
+    public double Fraction => Total > 0 ? Math.Clamp((double)Done / Total, 0, 1) : 0;
+    public int Percent => (int)Math.Round(Fraction * 100);
+    public override string ToString() => Determinate ? $"{Phase} — {Percent}%" : Phase;
+}
+
 /// <summary>Maps unreadable sectors to partitions, NTFS clusters and the files that own them.</summary>
 public static class BadSectorAnalyzer
 {
@@ -261,10 +270,11 @@ public static class BadSectorAnalyzer
     }
 
     public static BadSectorReport Analyze(IBlockDevice dev, BadSectorLog log, PartitionTableInfo? table = null, IReadOnlyList<NtfsVolumeCandidate>? volumes = null,
-        IProgress<string>? progress = null, CancellationToken ct = default)
+        IProgress<BadSectorProgress>? progress = null, CancellationToken ct = default)
     {
+        progress?.Report(new BadSectorProgress("Reading the partition table", 0, 0));
         table ??= PartitionTable.Read(dev);
-        volumes ??= VolumeLocator.Find(dev, table, true);
+        if (volumes == null) { progress?.Report(new BadSectorProgress("Locating NTFS volumes", 0, 0)); volumes = VolumeLocator.Find(dev, table, true); }
         int ss = Math.Max(512, dev.SectorSize);
         var report = new BadSectorReport
         {
@@ -312,13 +322,18 @@ public static class BadSectorAnalyzer
                 foreach (var (o, l) in ranges) report.Hits.Add(new BadSectorHit { Offset = o, Length = l, Lba = o / ss, Area = BadSectorArea.NtfsUnreadable, AreaText = partText + " (NTFS, unreadable)", Partition = partText });
                 continue;
             }
-            progress?.Report($"{partText}: reading $Bitmap and building the cluster owner map…");
+            progress?.Report(new BadSectorProgress($"{partText}: reading $Bitmap", 0, 0));
             ClusterBitmap? bitmap = null;
             try { bitmap = ClusterBitmap.Load(vol); } catch (Exception ex) { report.Notes.Add($"{partText}: $Bitmap unreadable ({ex.Message}); allocation state unknown."); }
-            ClusterOwnerMap owners = ClusterOwnerMap.Build(vol, null, ct);
+            long mftTotal = Math.Max(1, vol.MftRecordCount);
+            progress?.Report(new BadSectorProgress($"{partText}: indexing {mftTotal:N0} MFT records to find which file owns each cluster", 0, mftTotal));
+            ClusterOwnerMap owners = ClusterOwnerMap.Build(vol, new Progress<(long Done, long Total)>(x => progress?.Report(new BadSectorProgress($"{partText}: indexing MFT records ({x.Done:N0} of {x.Total:N0})", x.Done, x.Total))), ct);
             var ctx = new VolumeContext(vol, bitmap, owners, partText);
+            int done = 0;
             foreach (var (o, l) in ranges)
             {
+                ct.ThrowIfCancellationRequested();
+                if (++done % 16 == 0 || done == ranges.Count) progress?.Report(new BadSectorProgress($"{partText}: mapping unreadable ranges to files ({done:N0} of {ranges.Count:N0})", done, ranges.Count));
                 // Split at cluster boundaries so every hit maps to exactly one cluster (and therefore one owner).
                 long off = o, end = o + l;
                 while (off < end)
@@ -334,9 +349,11 @@ public static class BadSectorAnalyzer
             ctx.FinishFiles(report);
         }
 
+        progress?.Report(new BadSectorProgress("Summarising", 0, 0));
         report.Hits.Sort((a, b) => a.Offset.CompareTo(b.Offset));
         foreach (var h in report.Hits) report.BytesByArea[h.Area] = report.Bytes(h.Area) + h.Length;
         Summarize(report);
+        progress?.Report(new BadSectorProgress("Done", 1, 1));
         return report;
     }
 
