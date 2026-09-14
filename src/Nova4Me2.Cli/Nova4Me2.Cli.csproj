@@ -5,7 +5,7 @@
     <RootNamespace>Nova4Me2.Cli</RootNamespace>
     <AssemblyName>nova4me2</AssemblyName>
     <NoWarn>CA1416</NoWarn>
-    <ApplicationManifest Condition="'$(OS)' == 'Windows_NT'">app.manifest</ApplicationManifest>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
