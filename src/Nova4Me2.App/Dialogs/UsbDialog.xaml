@@ -9,6 +9,17 @@
     <Border Style="{StaticResource CardAlt}">
       <StackPanel x:Name="StatusPanel" />
     </Border>
+    <Border Style="{StaticResource CardAlt}">
+      <StackPanel>
+        <TextBlock Text="Recovery workstation mode: new disks arrive offline" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Muted}" FontSize="12" Margin="0,4,0,8" Text="Windows' SAN policy 'OfflineAll' makes every newly discovered disk (USB or internal) arrive offline: nothing is mounted or probed until you bring it online by hand in Disk Management. Ideal while recovering a flapping drive; switch back to 'OnlineAll' afterwards." />
+        <StackPanel Orientation="Horizontal">
+          <TextBlock x:Name="SanText" VerticalAlignment="Center" Margin="0,0,12,0" />
+          <Button Content="New disks arrive offline" Click="SanOffline_Click" />
+          <Button Content="Back to normal (OnlineAll)" Click="SanOnline_Click" Margin="0" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
     <TextBlock x:Name="LogText" Style="{StaticResource Mono}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,12" />
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
       <Button Content="Close" Click="Close_Click" IsCancel="True" />

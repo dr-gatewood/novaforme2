@@ -12,6 +12,7 @@ public partial class InfoView : UserControl, INovaView
     {
         InitializeComponent();
         Ui.State.SourceChanged += () => Dispatcher.BeginInvoke(OnShown);
+        Ui.State.HardwareChanged += () => Dispatcher.BeginInvoke(OnShown);
     }
 
     public void OnShown()

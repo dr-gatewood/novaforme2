@@ -9,12 +9,14 @@ public enum MountGuardChoice { Ignore, DisableAutomount, TakeOffline }
 public partial class MountGuardDialog : Window
 {
     private readonly int? _driveNumber;
+    private readonly ProtectionWatcher.Target? _target;
     public MountGuardChoice Choice { get; private set; } = MountGuardChoice.Ignore;
 
-    public MountGuardDialog(int? driveNumber, string driveDescription)
+    public MountGuardDialog(int? driveNumber, string driveDescription, ProtectionWatcher.Target? target = null)
     {
         InitializeComponent();
         _driveNumber = driveNumber;
+        _target = target;
         DriveText.Text = driveNumber is { } n ? $"Disk {n}: {driveDescription}" : driveDescription;
         if (driveNumber == null) ((FrameworkElement)FindName("DriveText")!).Visibility = Visibility.Collapsed;
     }
@@ -29,15 +31,14 @@ public partial class MountGuardDialog : Window
         catch (Exception ex) { ResultText.Text = "Failed: " + ex.Message; }
     }
 
-    private async void Offline_Click(object sender, RoutedEventArgs e)
+    private void Offline_Click(object sender, RoutedEventArgs e)
     {
         if (_driveNumber is not { } n) { Automount_Click(sender, e); return; }
-        try
-        {
-            await Task.Run(() => DiskControl.SetAttributes(n, offline: true, readOnly: true));
-            try { await Task.Run(() => DiskControl.SetAutomount(false)); } catch { }
-            Choice = MountGuardChoice.TakeOffline; Remember(); DialogResult = true;
-        }
-        catch (Exception ex) { ResultText.Text = "Failed: " + ex.Message + " — try 'Disable automount' instead, or take the disk offline in Disk Management."; }
+        // Hand the job to the watcher: it retries with short, abandonable attempts on every arrival event until the
+        // attribute lands, so a disk that drops off the bus every few seconds still gets protected — and this dialog never hangs.
+        var t = _target ?? new ProtectionWatcher.Target("", "", 0, $"disk {n}");
+        AppState.Current.Protection.Request(t);
+        try { Task.Run(() => DiskControl.SetAutomount(false)); } catch { }
+        Choice = MountGuardChoice.TakeOffline; Remember(); DialogResult = true;
     }
 }

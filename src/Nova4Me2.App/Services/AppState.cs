@@ -32,6 +32,8 @@ public sealed class AppState
     public MountSession? Mount { get; set; }
     public PartitionTableInfo? Partitions { get; private set; }
     public JobManager Jobs { get; } = new();
+    public ProtectionWatcher Protection { get; } = new();
+    public event Action? HardwareChanged;
     public ConnectionState LinkState { get; private set; } = ConnectionState.Closed;
 
     public event Action? SourceChanged;
@@ -74,15 +76,26 @@ public sealed class AppState
             {
                 try { using var v = NtfsVolume.Open(dev, c); c.Label = v.Info.Label; } catch { }
             }
-            if (OperatingSystem.IsWindows() && driveNumber is { } n)
-            {
-                progress?.Report("Querying hardware / SMART…");
-                try { Hardware = HardwareInfo.Collect(n); } catch (Exception ex) { Log.Warn("Hardware query: " + ex.Message); Hardware = HardwareInfo.ForDevice(dev, spec); }
-            }
-            else Hardware = HardwareInfo.ForDevice(dev, spec);
+            Hardware = HardwareInfo.ForDevice(dev, spec);
         });
         LinkChanged?.Invoke(LinkState);
         SourceChanged?.Invoke();
+        if (OperatingSystem.IsWindows() && driveNumber is { } n)
+        {
+            // SMART / identify pass-through can take a while through a USB bridge; never hold up opening the volume for it.
+            var myDevice = Device;
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var hw = HardwareInfo.Collect(n);
+                    if (Device != myDevice) return;
+                    Hardware = hw;
+                    HardwareChanged?.Invoke();
+                }
+                catch (Exception ex) { Log.Warn("Hardware query: " + ex.Message); }
+            });
+        }
         var pick = Volumes.OrderByDescending(v => v.Length).FirstOrDefault();
         if (pick != null) await SelectVolumeAsync(pick, progress);
     }
@@ -95,6 +108,7 @@ public sealed class AppState
             progress?.Report($"Opening NTFS volume at {Format.Bytes(c.StartOffset)}…");
             var vol = NtfsVolume.Open(Device, c);
             Volume = vol;
+            Hardware ??= HardwareInfo.ForDevice(Device, SourceSpec);
             SelectedCandidate = c;
             MftIndex = null;
             UseMftScan = false;

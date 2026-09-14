@@ -84,7 +84,7 @@ public static class AtaQuery
         Bin.PutU64(buf, 24, hdr);  // DataBufferOffset (ULONG_PTR): data follows the header
         int cur = 40;
         buf[cur + 0] = features; buf[cur + 1] = count; buf[cur + 2] = 1; buf[cur + 3] = lbaMid; buf[cur + 4] = lbaHigh; buf[cur + 5] = 0xA0; buf[cur + 6] = command;
-        var o = NativeMethods.Ioctl(h, NativeMethods.IOCTL_ATA_PASS_THROUGH, buf, buf.Length, out int err);
+        var o = NativeMethods.Ioctl(h, NativeMethods.IOCTL_ATA_PASS_THROUGH, buf, buf.Length, out int err, 5000);
         if (o == null || o.Length < hdr + 512) { error = o == null ? NativeMethods.ErrorText(err) : "short reply"; return null; }
         error = "";
         // Status register in CurrentTaskFile[6] of the returned header; ERR bit 0 means failure.

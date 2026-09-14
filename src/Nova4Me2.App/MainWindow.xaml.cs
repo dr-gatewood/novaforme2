@@ -52,7 +52,9 @@ public partial class MainWindow : Window
         _statusTimer.Start();
         PreviewKeyDown += (_, e) => { if (e.Key == Key.F1) { ToggleHelp(); e.Handled = true; } else if (e.Key == Key.Escape && HelpFlyout.Visibility == Visibility.Visible) { HideHelp(); e.Handled = true; } };
         if (State.Settings.ShowLogPanel) LogRow.Height = new GridLength(140);
-        Loaded += (_, _) => Navigate("Drives");
+        Loaded += (_, _) => { Navigate("Drives"); _ = RefreshSelectorAsync(); };
+        DeviceChanged += arrival => _ = RefreshSelectorAsync();
+        State.SourceChanged += () => Dispatcher.BeginInvoke(() => _ = RefreshSelectorAsync());
         SourceInitialized += (_, _) => HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WndProc);
         try { Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/nova4me2.ico")); } catch { }
         Closing += (_, e) =>
@@ -103,6 +105,65 @@ public partial class MainWindow : Window
     }
 
     public string CurrentView => _currentView;
+
+    // ---- title-bar drive selector (available on every view) ----
+    private sealed class DriveOption
+    {
+        public string Label = "";
+        public int Number = -1;
+        public string Spec = "";
+        public bool IsImage;
+        public bool IsPlaceholder;
+        public override string ToString() => Label;
+    }
+    private bool _selectorBusy;
+
+    private async Task RefreshSelectorAsync()
+    {
+        if (_selectorBusy) return;
+        _selectorBusy = true;
+        try
+        {
+            var items = new List<DriveOption> { new() { Label = "Select a drive…", IsPlaceholder = true } };
+            if (OperatingSystem.IsWindows())
+            {
+                var list = await Task.Run(() => Core.Devices.Windows.DriveEnumerator.QuickList());
+                foreach (var d in list)
+                {
+                    string label = d.OpenError != null ? $"[{d.Number}] {(d.ProbeTimedOut ? "not responding" : d.OpenError)}"
+                        : $"[{d.Number}] {d.Model} · {Core.Util.Format.Bytes(d.Length)}{(d.Attributes.Offline ? " · OFFLINE" : "")}{(d.Storage.IsUsb ? " · USB" : "")}";
+                    items.Add(new DriveOption { Label = label, Number = d.Number, Spec = d.DevicePath });
+                }
+            }
+            if (State.HasDevice && State.DriveNumber == null) items.Add(new DriveOption { Label = "Image: " + State.SourceName, Spec = State.SourceSpec });
+            items.Add(new DriveOption { Label = "Open image file…", IsImage = true });
+            DriveSelector.SelectionChanged -= DriveSelector_SelectionChanged;
+            DriveSelector.ItemsSource = items;
+            DriveSelector.SelectedItem = items.FirstOrDefault(i => State.HasDevice && (State.DriveNumber is { } n ? i.Number == n : i.Spec == State.SourceSpec)) ?? items[0];
+            DriveSelector.SelectionChanged += DriveSelector_SelectionChanged;
+        }
+        finally { _selectorBusy = false; }
+    }
+
+    private void DriveSelector_DropDownOpened(object sender, EventArgs e) => _ = RefreshSelectorAsync();
+
+    private async void DriveSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (DriveSelector.SelectedItem is not DriveOption o || o.IsPlaceholder) return;
+        if (o.IsImage)
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog { Title = "Open disk or partition image", Filter = "Disk images (*.img;*.dd;*.raw;*.bin;*.001)|*.img;*.dd;*.raw;*.bin;*.001|All files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) { await RefreshSelectorAsync(); return; }
+            await RunBusy("Opening " + System.IO.Path.GetFileName(dlg.FileName), async p => await State.OpenAsync(dlg.FileName, System.IO.Path.GetFileName(dlg.FileName), null, p));
+            await RefreshSelectorAsync();
+            return;
+        }
+        if (o.Number >= 0 && o.Number != State.DriveNumber)
+        {
+            await RunBusy("Opening " + o.Label, async p => await State.OpenAsync(o.Spec, o.Label.Split(" · ")[0], o.Number, p));
+            await RefreshSelectorAsync();
+        }
+    }
 
     public void Navigate(string key)
     {

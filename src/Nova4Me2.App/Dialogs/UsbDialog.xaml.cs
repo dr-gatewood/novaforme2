@@ -9,7 +9,29 @@ public partial class UsbDialog : Window
     public UsbDialog()
     {
         InitializeComponent();
-        Loaded += (_, _) => Refresh();
+        Loaded += (_, _) => { Refresh(); _ = RefreshSanAsync(); };
+    }
+
+    private async Task RefreshSanAsync()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        SanText.Text = "SAN policy: querying…";
+        var p = await Task.Run(() => DiskControl.GetSanPolicy());
+        SanText.Text = "SAN policy: " + p;
+    }
+
+    private async void SanOffline_Click(object sender, RoutedEventArgs e)
+    {
+        try { await Task.Run(() => DiskControl.SetSanPolicy(DiskControl.SanPolicy.OfflineAll)); LogText.Text = "New disks will now arrive offline (SAN policy OfflineAll)."; }
+        catch (Exception ex) { LogText.Text = ex.Message; }
+        await RefreshSanAsync();
+    }
+
+    private async void SanOnline_Click(object sender, RoutedEventArgs e)
+    {
+        try { await Task.Run(() => DiskControl.SetSanPolicy(DiskControl.SanPolicy.OnlineAll)); LogText.Text = "SAN policy back to OnlineAll."; }
+        catch (Exception ex) { LogText.Text = ex.Message; }
+        await RefreshSanAsync();
     }
 
     private void Refresh()

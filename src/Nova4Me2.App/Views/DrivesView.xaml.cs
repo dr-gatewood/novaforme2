@@ -21,6 +21,9 @@ public sealed class DriveCard
     public string Badge { get; init; } = "";
     public bool IsSystem { get; init; }
     public bool HasRaw { get; init; }
+    public string Serial { get; init; } = "";
+    public long Length { get; init; }
+    public string Identity => Length > 0 ? $"{Serial}|{Model}|{Length}" : $"#{Number}";
     public bool NotResponding { get; init; }
     public Brush BorderBrush { get; set; } = Brushes.Transparent;
     public string Spec => $@"\\.\PhysicalDrive{Number}";
@@ -37,7 +40,7 @@ public partial class DrivesView : UserControl, INovaView
 {
     private bool _loading;
 
-    private bool _guardShownThisSession;
+    private readonly HashSet<string> _guardShownFor = new();
 
     public DrivesView()
     {
@@ -45,10 +48,13 @@ public partial class DrivesView : UserControl, INovaView
         Ui.State.SourceChanged += () => Dispatcher.BeginInvoke(RefreshVolumes);
         Ui.Main.DeviceChanged += arrival =>
         {
+            Ui.State.Protection.OnDeviceChanged();
             Ui.Main.Toast(arrival ? "Disk connected" : "Disk removed", arrival ? "Refreshing the drive list…" : "The drive list is being refreshed.");
             Cards.ItemsSource = null;
             _ = LoadAsync(promptGuard: arrival);
         };
+        Ui.State.Protection.StatusChanged += m => Dispatcher.BeginInvoke(() => { ProtectText.Text = m; EmptyText.Text = m; EmptyText.Visibility = Visibility.Visible; });
+        Ui.State.Protection.Protected += (t, n) => Dispatcher.BeginInvoke(() => { Ui.Main.Toast("Disk protected", $"{t.Display} is offline and read-only in Windows; it can now be opened here without Windows interfering."); Cards.ItemsSource = null; _ = LoadAsync(); });
     }
 
     public void OnShown() { if (Cards.Items.Count == 0) _ = LoadAsync(); RefreshVolumes(); }
@@ -77,6 +83,7 @@ public partial class DrivesView : UserControl, INovaView
                 cards.Add(new DriveCard
                 {
                     Number = d.Number, Model = d.Model, SizeText = Format.Bytes(d.Length), IsSystem = d.IsSystemDisk,
+                    Serial = d.Storage.Serial, Length = d.Length,
                     Detail = $"{d.Storage.BusTypeName}{(d.Storage.IsUsb ? " (USB bridge)" : "")} · {d.SectorSize} B sectors · S/N {(d.Storage.Serial.Length > 0 ? d.Storage.Serial : "n/a")} · FW {d.Storage.Revision}",
                     VolumesText = vols + (d.Attributes.Queried && d.Attributes.Offline ? "\n• Offline in Windows (protected)" : ""), Badge = d.IsSystemDisk ? "SYSTEM" : d.Attributes.Offline ? "OFFLINE" : raw ? "RAW" : $"disk {d.Number}", HasRaw = raw,
                     Warning = raw ? "Windows cannot read a volume on this disk (RAW). Nova4Me2 reads it directly." : d.IsSystemDisk ? "This is the Windows system disk." : ""
@@ -96,17 +103,20 @@ public partial class DrivesView : UserControl, INovaView
     private async void MaybeShowGuard(DriveCard? card, bool force = false)
     {
         if (card == null || !OperatingSystem.IsWindows()) return;
-        if (!force && (Ui.State.Settings.MountGuardDismissed || _guardShownThisSession)) return;
+        var prot = Ui.State.Protection;
+        if (prot.IsPending(card.Serial, card.Model, card.Length)) { Ui.Main.Toast("Protection pending", $"Still waiting for {card.Model} to answer; it will be taken offline the moment it does."); return; }
+        if (!force && (Ui.State.Settings.MountGuardDismissed || _guardShownFor.Contains(card.Identity))) return;
+        if (_guardShownFor.Contains(card.Identity) && force) return; // asked once for this disk already
         int num = card.Number;
-        bool alreadyOffline = await Task.Run(() => Core.Devices.Windows.DiskControl.GetAttributes(num).Offline);
-        if (alreadyOffline && !force) return;
-        _guardShownThisSession = true;
-        var dlg = new Dialogs.MountGuardDialog(card.Number, $"{card.Model}, {card.SizeText}") { Owner = Ui.Main };
+        bool alreadyOffline = card.Length > 0 && await Task.Run(() => Core.Devices.Windows.DiskControl.GetAttributes(num).Offline);
+        if (alreadyOffline) return;
+        _guardShownFor.Add(card.Identity);
+        var target = new Services.ProtectionWatcher.Target(card.Serial, card.Model, card.Length, $"{card.Model} ({card.SizeText})", card.Number);
+        var dlg = new Dialogs.MountGuardDialog(card.Number, $"{card.Model}, {card.SizeText}", target) { Owner = Ui.Main };
         if (dlg.ShowDialog() == true)
         {
-            Ui.Main.Toast(dlg.Choice == Dialogs.MountGuardChoice.TakeOffline ? "Disk protected" : "Automount disabled", dlg.Choice == Dialogs.MountGuardChoice.TakeOffline ? "Windows will leave this disk alone. Open it here to start recovering." : "Windows will stop mounting newly connected volumes.");
-            Cards.ItemsSource = null;
-            _ = LoadAsync();
+            if (dlg.Choice == Dialogs.MountGuardChoice.DisableAutomount) Ui.Main.Toast("Automount disabled", "Windows will stop mounting newly connected volumes. If the disk still flaps, use 'Keep Windows off this disk'.");
+            else Ui.Main.Toast("Protecting disk", "Nova4Me2 will take the disk offline + read-only as soon as it answers (keep it plugged in; re-plug if needed).");
         }
     }
 
@@ -121,7 +131,12 @@ public partial class DrivesView : UserControl, INovaView
     {
         if ((sender as FrameworkElement)?.DataContext is not DriveCard c) return;
         if (c.Badge == "locked") { Ui.Main.Toast("Cannot open drive", c.Detail, true); return; }
-        if (c.NotResponding) { MaybeShowGuard(c, force: true); Ui.Main.Toast("Disk not responding", "Windows is busy with this disk. Protect it (offline) or re-plug it, then refresh.", true); return; }
+        if (c.NotResponding)
+        {
+            if (!Ui.State.Protection.IsPending(c.Serial, c.Model, c.Length) && !_guardShownFor.Contains(c.Identity)) MaybeShowGuard(c, force: true);
+            else Ui.Main.Toast("Disk not responding", "Windows is still holding this disk. Protection is pending; it will be applied as soon as the disk answers. Re-plugging the enclosure usually speeds this up.", true);
+            return;
+        }
         if (c.HasRaw && !c.IsSystem) MaybeShowGuard(c);
         await OpenAsync(c.Spec, $"{c.Model} (disk {c.Number})", c.Number);
         Highlight();
@@ -171,13 +186,12 @@ public partial class DrivesView : UserControl, INovaView
 
     private async void Protect_Click(object sender, RoutedEventArgs e)
     {
-        if (Ui.State.DriveNumber is not { } n) return;
-        try
-        {
-            await Task.Run(() => Core.Devices.Windows.DiskControl.SetAttributes(n, offline: true, readOnly: true));
-            Ui.Main.Toast("Disk protected", "Windows will no longer mount or write to this disk. Reads through Nova4Me2 continue to work.");
-        }
-        catch (Exception ex) { Ui.Main.Toast("Could not take the disk offline", ex.Message, true); }
+        var st = Ui.State;
+        if (st.DriveNumber is not { } n) return;
+        var hw = st.Hardware;
+        var target = new Services.ProtectionWatcher.Target(hw?.Serial ?? "", hw?.Model ?? "", st.Device?.Length ?? 0, st.SourceName, n);
+        st.Protection.Request(target);
+        Ui.Main.Toast("Protecting disk", "Nova4Me2 is taking the disk offline + read-only in Windows; if the disk is busy this is retried automatically until it succeeds.");
         await UpdateProtectUiAsync();
     }
 
