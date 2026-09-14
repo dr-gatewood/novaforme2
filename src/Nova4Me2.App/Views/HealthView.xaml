@@ -24,8 +24,8 @@
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
-          <c:GaugeControl x:Name="ScoreGauge" Grid.Column="0" Label="structural health" Margin="0,0,20,0" />
-          <c:GaugeControl x:Name="BootGauge" Grid.Column="1" Label="boot record fix likelihood" Suffix="%" Margin="0,0,24,0" />
+          <c:GaugeControl x:Name="ScoreGauge" Grid.Column="0" Label="structural health (out of 100)" Margin="0,0,20,0" />
+          <c:GaugeControl x:Name="BootGauge" Grid.Column="1" Label="chance a boot-record fix helps" Suffix="%" Margin="0,0,24,0" />
           <StackPanel Grid.Column="2" VerticalAlignment="Center">
             <TextBlock x:Name="GradeText" Text="Not analysed yet" FontSize="18" FontWeight="SemiBold" />
             <TextBlock x:Name="VerdictText" Style="{StaticResource Body}" Margin="0,6,0,0" />

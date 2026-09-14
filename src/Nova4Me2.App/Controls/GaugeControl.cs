@@ -45,12 +45,15 @@ public sealed class GaugeControl : FrameworkElement
         if (v > 0.5) dc.DrawGeometry(null, arcPen, Arc(cx, cy, r, start, sweepMax * v / 100));
         var textBrush = new SolidColorBrush(C("Text", Colors.White));
         var muted = new SolidColorBrush(C("TextMuted", Colors.Gray));
-        var big = new FormattedText($"{v:0}{Suffix}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), size * 0.22, textBrush, 1.0) { TextAlignment = TextAlignment.Center };
-        dc.DrawText(big, new Point(cx, cy - big.Height / 2 - size * 0.02));
+        // FormattedText anchors at the left edge of its layout box, so centre the box on cx explicitly.
+        double bigW = size * 0.9;
+        var big = new FormattedText($"{v:0}{Suffix}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), size * 0.22, textBrush, 1.0) { TextAlignment = TextAlignment.Center, MaxTextWidth = bigW, MaxLineCount = 1 };
+        dc.DrawText(big, new Point(cx - bigW / 2, cy - big.Height / 2 - size * 0.02));
         if (!string.IsNullOrEmpty(Label))
         {
-            var lbl = new FormattedText(Label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), Math.Max(9, size * 0.075), muted, 1.0) { TextAlignment = TextAlignment.Center, MaxTextWidth = size * 0.8 };
-            dc.DrawText(lbl, new Point(cx, cy + size * 0.16));
+            double lblW = size * 0.72;
+            var lbl = new FormattedText(Label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), Math.Max(9, size * 0.075), muted, 1.0) { TextAlignment = TextAlignment.Center, MaxTextWidth = lblW, MaxLineCount = 2, Trimming = TextTrimming.CharacterEllipsis };
+            dc.DrawText(lbl, new Point(cx - lblW / 2, cy + size * 0.15));
         }
     }
 
