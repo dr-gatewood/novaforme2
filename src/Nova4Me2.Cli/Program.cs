@@ -43,6 +43,7 @@ public static class Program
                 "mount" => MountCmd(args),
                 "stabilize-usb" or "usb" => StabilizeUsb(args),
                 "protect" => Protect(args),
+                "vhd" => Vhd(args),
                 "cat" => Cat(args),
                 _ => throw new UsageException($"Unknown command '{cmd}'.")
             };
@@ -63,7 +64,8 @@ Usage: nova4me2 <command> [options]
   ls <src> [path] [--volume N] [-R] [--mft-scan] [--deleted] [--all] [--long]
   cat <src> <path> [--stream NAME]      Write a file's contents to stdout
   copy <src> <path>... --to DIR [--volume N] [--mft-scan] [--overwrite|--rename] [--ads] [--verify] [--report FILE]
-  image <src> <target.img> [--partition N | --start BYTES --length BYTES] [--resume] [--single-pass] [--verify] [--md5] [--report FILE]
+  image <src> <target.img> [--partition N | --start BYTES --length BYTES] [--resume] [--single-pass] [--verify] [--md5] [--vhd] [--report FILE]
+  vhd <image.img> [--strip]               Append (or remove) the fixed-VHD footer so Windows Disk Management can attach the image
   clone <src> <targetdrive> [--partition N --target-offset BYTES] [--verify] --yes
   health <src> [--surface quick|full] [--no-smart] [--report FILE...]
   repair <src> <boot-sector|backup-boot-sector|gpt|mft-mirror|undo FILE> [--volume N] --yes
@@ -298,7 +300,18 @@ Reports: any of .txt .html .pdf by extension. Nothing is ever written to the sou
         var p = RunImaging(a, dev, dst, opt);
         Console.WriteLine($"{p.Phase}: {Format.Bytes(p.BytesDone)} in {Format.Duration(p.Elapsed)}, {p.BadSectorCount} unreadable sectors{(p.Sha256 != null ? $", SHA-256 {p.Sha256}" : "")}{(p.TargetSha256 != null ? $", verify {(p.VerifyOk ? "OK" : "MISMATCH")}" : "")}");
         foreach (var m in p.Messages) Console.WriteLine("  " + m);
+        if (a.Has("vhd") && p.Phase == "Complete") { dst.Dispose(); string v = VhdFooter.Append(target); Console.WriteLine($"VHD footer appended: {v} (attach in Disk Management, read-only)."); target = v; }
         SaveReports(a, ReportBuilder.FromImaging(p, a.Pos(1), target));
+        return 0;
+    }
+
+    private static int Vhd(Args a)
+    {
+        string path = a.Pos(1);
+        if (!File.Exists(path)) throw new UsageException($"{path} not found.");
+        if (a.Has("strip")) { VhdFooter.Strip(path); Console.WriteLine("VHD footer removed; the file is a plain raw image again."); return 0; }
+        string v = VhdFooter.Append(path);
+        Console.WriteLine($"Done: {v}. In Windows: Disk Management → Action → Attach VHD → tick 'Read-only' → the NTFS volume gets a drive letter.");
         return 0;
     }
 

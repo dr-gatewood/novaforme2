@@ -134,6 +134,14 @@ public partial class CloneView : UserControl, INovaView
             var result = await Task.Run(() => Imager.Run(dev, target, opt, progress, _cts.Token));
             _last = result;
             Show(result);
+            if (toFile && AsVhd.IsChecked == true && result.Phase == "Complete")
+            {
+                target.Dispose();
+                string vhd = await Task.Run(() => VhdFooter.Append(FilePath.Text.Trim()));
+                _lastTarget = vhd;
+                FilePath.Text = vhd;
+                Ui.Main.Toast("VHD ready", $"{System.IO.Path.GetFileName(vhd)} can be attached in Windows Disk Management (Action → Attach VHD; tick Read-only).");
+            }
             Ui.Main.Toast("Clone complete", $"{Format.Bytes(result.BytesDone)} copied, {result.BadSectorCount} unreadable sectors{(result.TargetSha256 != null ? (result.VerifyOk ? ", verification OK" : ", VERIFICATION MISMATCH") : "")}.", result.TargetSha256 != null && !result.VerifyOk);
         }
         catch (OperationCanceledException) { PhaseText.Text = "Cancelled (resumable for image files)"; Ui.Main.Toast("Clone cancelled", "Progress was saved; tick Resume to continue later."); }
@@ -161,6 +169,18 @@ public partial class CloneView : UserControl, INovaView
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => _cts?.Cancel();
+
+    private async void Vhd_Click(object sender, RoutedEventArgs e)
+    {
+        var path = Ui.OpenFile("Choose a raw image to convert to VHD", "Raw disk image (*.img;*.dd;*.raw)|*.img;*.dd;*.raw|All files (*.*)|*.*");
+        if (path == null) return;
+        try
+        {
+            string vhd = await Task.Run(() => VhdFooter.Append(path));
+            Ui.Main.Toast("VHD ready", $"{System.IO.Path.GetFileName(vhd)} — attach it in Disk Management (Action → Attach VHD, Read-only) to get a drive letter.");
+        }
+        catch (Exception ex) { Ui.Main.Toast("Conversion failed", ex.Message, true); }
+    }
 
     private void Report_Click(object sender, RoutedEventArgs e)
     {

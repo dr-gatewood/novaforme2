@@ -100,7 +100,7 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="RadioButton">
-          <Border x:Name="Bd" Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="999" Padding="12,5">
+          <Border x:Name="Bd" Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="8" Padding="12,6">
             <ContentPresenter VerticalAlignment="Center" />
           </Border>
           <ControlTemplate.Triggers>

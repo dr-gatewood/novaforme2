@@ -173,6 +173,42 @@ public class AnalysisTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void VhdFooter_AppendsValidFixedVhdAndImageStillOpens()
+    {
+        if (!Available) return;
+        string tmp = Path.Combine(Path.GetTempPath(), "nova-vhd-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tmp);
+        try
+        {
+            string img = Path.Combine(tmp, "copy.img");
+            File.Copy(TestImages.Plain, img);
+            long raw = new FileInfo(img).Length;
+            string vhd = VhdFooter.Append(img);
+            Assert.EndsWith(".vhd", vhd);
+            Assert.True(VhdFooter.HasFooter(vhd));
+            Assert.Equal(raw + 512, new FileInfo(vhd).Length);
+            var footer = new byte[512];
+            using (var fs = File.OpenRead(vhd)) { fs.Seek(-512, SeekOrigin.End); fs.ReadExactly(footer); }
+            Assert.Equal("conectix", System.Text.Encoding.ASCII.GetString(footer, 0, 8));
+            Assert.Equal(2u, (uint)(footer[60] << 24 | footer[61] << 16 | footer[62] << 8 | footer[63]));
+            ulong size = 0; for (int i = 0; i < 8; i++) size = size << 8 | footer[48 + i];
+            Assert.Equal((ulong)raw, size);
+            uint sum = 0; for (int i = 0; i < 512; i++) if (i < 64 || i >= 68) sum += footer[i];
+            uint stored = (uint)(footer[64] << 24 | footer[65] << 16 | footer[66] << 8 | footer[67]);
+            Assert.Equal(~sum, stored);
+            using (var dev = ResilientBlockDevice.ForImage(vhd))
+            {
+                Assert.Equal(raw, dev.Length);
+                var vol = Nova4Me2.Core.Ntfs.NtfsVolume.Open(dev, VolumeLocator.Find(dev)[0]);
+                Assert.NotNull(vol.Resolve(@"Users\Alice\Documents\hello.txt"));
+            }
+            VhdFooter.Strip(vhd);
+            Assert.Equal(raw, new FileInfo(vhd).Length);
+        }
+        finally { try { Directory.Delete(tmp, true); } catch { } }
+    }
+
+    [Fact]
     public void VendorDatabase_IdentifiesSamsung970Evo()
     {
         var v = VendorDatabase.Identify("Samsung SSD 970 EVO 500GB");

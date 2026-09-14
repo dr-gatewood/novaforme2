@@ -18,6 +18,17 @@ public sealed class FileBlockDevice : IBlockDevice
             // Block special files report 0 length via FileStream on some platforms; seek to end to discover size.
             try { len = _fs.Seek(0, SeekOrigin.End); } catch { len = 0; }
         }
+        // A fixed VHD is a raw image with a 512-byte "conectix" footer: expose only the raw part.
+        if (len >= 512 && path.EndsWith(".vhd", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                _fs.Position = len - 512;
+                Span<byte> c = stackalloc byte[8];
+                if (_fs.Read(c) == 8 && c.SequenceEqual("conectix"u8)) len -= 512;
+            }
+            catch { }
+        }
         Length = len;
         Description = $"Image file {System.IO.Path.GetFileName(path)} ({Util.Format.Bytes(Length)})";
     }
