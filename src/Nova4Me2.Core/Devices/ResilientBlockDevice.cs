@@ -25,6 +25,8 @@ public sealed class ResilienceOptions
     public long MaxBytesPerSecond { get; set; }
     /// <summary>Optional pause between chunks.</summary>
     public TimeSpan InterChunkDelay { get; set; } = TimeSpan.Zero;
+    /// <summary>When a chunk fails on a live device, retry it in smaller pieces down to one sector (true) or fail the whole chunk fast (false; used by the first imaging pass).</summary>
+    public bool SubdivideOnError { get; set; } = true;
 }
 
 public sealed class BadSectorEventArgs(long offset, int length, string reason) : EventArgs
@@ -147,6 +149,8 @@ public sealed class ResilientBlockDevice : IBlockDevice
                     continue;
                 }
                 // Device is alive: the error is localized to this range.
+                if (span.Length > SectorSize && !_opt.SubdivideOnError)
+                    throw new BadSectorException(off, span.Length, ex); // fast-fail: the caller (imager pass 1) will come back for this chunk
                 if (span.Length > SectorSize)
                 {
                     long mid = Bin.AlignDown(off + span.Length / 2, SectorSize);
