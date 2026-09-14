@@ -411,19 +411,21 @@
                   </LinearGradientBrush>
                 </Border.Background>
                 <Border.RenderTransform>
-                  <TranslateTransform X="-200" />
+                  <TranslateTransform X="-300" />
                 </Border.RenderTransform>
+                <Border.Triggers>
+                  <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                    <BeginStoryboard>
+                      <Storyboard RepeatBehavior="Forever">
+                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="-300" To="1200" Duration="0:0:2.2" />
+                      </Storyboard>
+                    </BeginStoryboard>
+                  </EventTrigger>
+                </Border.Triggers>
               </Border>
             </Border>
           </Grid>
           <ControlTemplate.Triggers>
-            <EventTrigger RoutedEvent="Loaded">
-              <BeginStoryboard>
-                <Storyboard RepeatBehavior="Forever">
-                  <DoubleAnimation Storyboard.TargetName="Shimmer" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="-300" To="1200" Duration="0:0:2.2" />
-                </Storyboard>
-              </BeginStoryboard>
-            </EventTrigger>
             <Trigger Property="IsIndeterminate" Value="True">
               <Setter TargetName="PART_Indicator" Property="Width" Value="120" />
             </Trigger>
