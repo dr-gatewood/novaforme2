@@ -41,6 +41,41 @@ public sealed class StegoRow
     public string ExtractableText => F.Extractable ? "yes" : "";
 }
 
+public sealed class BadRow
+{
+    public string Where { get; init; } = "";
+    public string Kind { get; init; } = "";
+    public string Lost { get; init; } = "";
+    public string Size { get; init; } = "";
+    public string Range { get; init; } = "";
+    public string Hits { get; init; } = "";
+    public string Impact { get; init; } = "";
+
+    public static BadRow From(AffectedFile f) => new()
+    {
+        Where = f.Display + (f.Attribute.Length > 0 && f.Attribute != "$DATA" ? "  [" + f.Attribute + "]" : ""),
+        Kind = f.Kind, Lost = f.BytesLost > 0 ? Format.Bytes(f.BytesLost) + (f.FileSize > 0 ? $" ({f.PercentLost:0.##}%)" : "") : "none",
+        Size = f.FileSize > 0 ? Format.Bytes(f.FileSize) : "", Range = f.WhereText, Hits = f.Hits.ToString(), Impact = f.Impact,
+    };
+
+    public static BadRow Area(BadSectorArea a, long bytes, int hits) => new()
+    {
+        Where = BadSectorReport.AreaName(a), Kind = "area", Lost = a is BadSectorArea.NtfsFile or BadSectorArea.NtfsMetadata ? Format.Bytes(bytes) : "none", Size = Format.Bytes(bytes), Hits = hits.ToString(),
+        Impact = a switch
+        {
+            BadSectorArea.NtfsUnallocated => "Free space: no file was using these clusters. Only matters for carving deleted data.",
+            BadSectorArea.NtfsSlack => "Past the end of a file's data: nothing lost.",
+            BadSectorArea.NtfsDeletedFile => "Former contents of deleted files: only matters if you undelete them.",
+            BadSectorArea.Unpartitioned => "Alignment gap outside every partition: nothing lost.",
+            BadSectorArea.PartitionTable => "Partition table sectors: Repair can rebuild them from the backup copy.",
+            BadSectorArea.NonNtfsPartition => "Inside a non-NTFS partition (EFI/recovery): not analysed.",
+            BadSectorArea.NtfsUnowned => "Allocated but not referenced by any file (lost clusters): nothing lost.",
+            BadSectorArea.NtfsUnreadable => "NTFS structures of this volume could not be read; position only.",
+            _ => "",
+        },
+    };
+}
+
 public partial class ForensicsView : UserControl, INovaView
 {
     private ForensicProject? _project;
@@ -50,6 +85,7 @@ public partial class ForensicsView : UserControl, INovaView
     private StegoReport? _stegoReport;
     private DecodedImage? _stegoImage;
     private ClusterOwnerMap? _owners;
+    private BadSectorReport? _badReport;
     private List<NtfsForensics.SlackEntry> _slack = new();
 
     public ForensicsView()
@@ -68,6 +104,64 @@ public partial class ForensicsView : UserControl, INovaView
         AdsScanButton.IsEnabled = CarveStart.IsEnabled = has || ScopeFile.IsChecked == true;
         StegoRun.IsEnabled = true;
         if (_project == null) ProjectPath.Text = "No project yet — name one and press Start.";
+        if (BadLogPath.Text.Trim().Length == 0 && BadSectorAnalyzer.FindLogFor(Ui.State.SourceSpec) is { } found) { BadLogPath.Text = found; BadStatus.Text = "log found next to the image"; }
+        BadRun.IsEnabled = Ui.State.HasDevice;
+    }
+
+    // ---- bad sectors ----
+    private void BadBrowse_Click(object sender, RoutedEventArgs e)
+    {
+        var f = Ui.OpenFile("Bad-sector log", "Bad sector logs (*.badsectors.txt;*.map;*.mapfile;*.txt;*.log)|*.badsectors.txt;*.map;*.mapfile;*.txt;*.log|All files|*.*");
+        if (f != null) BadLogPath.Text = f;
+    }
+
+    private async void BadAnalyze_Click(object sender, RoutedEventArgs e)
+    {
+        var dev = Ui.State.Device;
+        if (dev == null) { Ui.Main.Toast("Open the image or drive first", "Select the cloned image in the drive selector, then analyse its log.", true); return; }
+        string path = BadLogPath.Text.Trim();
+        if (path.Length == 0 || !File.Exists(path)) { Ui.Main.Toast("No log", "Pick the .badsectors.txt written next to the image.", true); return; }
+        BadRun.IsEnabled = false;
+        BadStatus.Text = "reading log…";
+        var table = Ui.State.Partitions; var vols = Ui.State.Volumes;
+        try
+        {
+            var prog = new Progress<string>(m => BadStatus.Text = m);
+            var report = await Task.Run(() =>
+            {
+                var log = BadSectorLog.Load(path, dev.SectorSize);
+                return BadSectorAnalyzer.Analyze(dev, log, table, vols, prog);
+            });
+            _badReport = report;
+            BadHeadline.Text = report.Headline;
+            BadVerdict.Text = report.Verdict;
+            var rows = report.Files.OrderByDescending(f => f.BytesLost).ThenBy(f => f.Display).Select(BadRow.From).ToList();
+            foreach (var kv in report.BytesByArea.OrderByDescending(k => k.Value))
+                if (kv.Key is not (BadSectorArea.NtfsFile or BadSectorArea.NtfsMetadata or BadSectorArea.NtfsDeletedFile))
+                    rows.Add(BadRow.Area(kv.Key, kv.Value, report.Hits.Count(h => h.Area == kv.Key)));
+            BadList.ItemsSource = rows;
+            BadDetail.Text = report.ToText();
+            BadStatus.Text = $"{report.TotalSectors:N0} sectors ({Format.Bytes(report.TotalBytes)}) in {report.RangeCount:N0} ranges — {report.UserFilesAffected} file(s) with lost data";
+            Ui.Main.Toast("Bad-sector analysis", report.Headline, report.UserFilesAffected > 0);
+        }
+        catch (Exception ex) { BadStatus.Text = "failed"; Ui.Main.Toast("Bad-sector analysis failed", ex.GetBaseException().Message, true); }
+        finally { BadRun.IsEnabled = true; }
+    }
+
+    private void BadSave_Click(object sender, RoutedEventArgs e)
+    {
+        if (_badReport == null) { Ui.Main.Toast("Nothing to save", "Run Analyze first.", true); return; }
+        try
+        {
+            var proj = Project();
+            string txt = ForensicProject.UniquePath(proj.ReportsDir, "badsectors.txt");
+            string csv = ForensicProject.UniquePath(proj.ReportsDir, "badsectors.csv");
+            _badReport.WriteText(txt); _badReport.WriteCsv(csv);
+            proj.Note($"bad-sector analysis of {_badReport.LogPath} -> {txt}, {csv}");
+            BadStatus.Text = "saved: " + txt;
+            Ui.Main.Toast("Report saved", proj.ReportsDir);
+        }
+        catch (Exception ex) { Ui.Main.Toast("Save failed", ex.Message, true); }
     }
 
     // ---- project ----

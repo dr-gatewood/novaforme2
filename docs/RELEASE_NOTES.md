@@ -1,3 +1,9 @@
+# Nova4Me2 v1.0.4
+
+## Added
+- **Bad-sector analysis** (Analysis / Forensics → Bad sectors). Load the `.badsectors.txt` log the imager writes next to an image (or a GNU ddrescue mapfile, or a plain LBA list) and every unreadable range is mapped to where it lands: partition table, unpartitioned gap, non-NTFS partition, free space, file slack, a live file (with the byte range inside the file and the percentage lost), a deleted file, a directory index, or NTFS metadata (for `$MFT` hits, the exact file records that were damaged, by name). A verdict says whether any file was actually affected, with an impact note per file, and the report saves as TXT + CSV into the project. The log is picked up automatically when an image with a log next to it is selected in the drive selector. CLI: `nova4me2 forensics <image> badsectors [LOG] [--csv FILE] [--out FILE]` (exit code 2 when a file or metadata structure was hit).
+- The clone-complete toast points to the analysis when unreadable sectors were logged.
+
 # Nova4Me2 v1.0.3
 
 ## Added

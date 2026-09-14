@@ -203,4 +203,122 @@ public class ForensicsTests(ITestOutputHelper output)
             finally { Directory.Delete(tmp, true); }
         }
     }
+
+    [Fact]
+    public void BadSectorLog_ParsesNovaDdrescueAndLbaFormats()
+    {
+        var nova = BadSectorLog.Parse("# Nova4Me2 unreadable sector log — 2026-09-14 02:46:04\n# Source: Samsung SSD 970 EVO 500G (465.76 GB, USB)\n# byte_offset\tlength\tLBA\tsectors\n205253541888\t512\t400885824\t1\n205253542400\t512\t400885825\t1\n205254183936\t512\t400887078\t1\n");
+        Assert.Equal("Nova4Me2 bad sector log", nova.Format);
+        Assert.Equal("Samsung SSD 970 EVO 500G (465.76 GB, USB)", nova.SourceDescription);
+        Assert.Equal(2, nova.Ranges.Count); // adjacent sectors coalesce
+        Assert.Equal((205253541888L, 1024L), nova.Ranges[0]);
+        Assert.Equal(1536, nova.TotalBytes);
+        Assert.Equal(3, nova.TotalSectors);
+
+        var dd = BadSectorLog.Parse("# Mapfile. Created by GNU ddrescue version 1.27\n# current_pos  current_status  current_pass\n0x00000000     +               1\n#      pos        size  status\n0x00000000  0x00100000  +\n0x00100000  0x00000200  -\n0x00100200  0x00000400  /\n0x00100600  0x0FF00000  +\n");
+        Assert.Equal("ddrescue mapfile", dd.Format);
+        Assert.Single(dd.Ranges);
+        Assert.Equal((0x100000L, 0x600L), dd.Ranges[0]);
+
+        var lba = BadSectorLog.Parse("100\n101\n300\n", sectorSize: 512);
+        Assert.Equal("LBA list", lba.Format);
+        Assert.Equal(2, lba.Ranges.Count);
+        Assert.Equal((51200L, 1024L), lba.Ranges[0]);
+    }
+
+    [Fact]
+    public void BadSectors_MapToFileFreeSpaceMftAndSlack()
+    {
+        if (!Available) return;
+        var (dev, vol) = Open();
+        using (dev)
+        {
+            int cs = vol.ClusterSize;
+            var bitmap = ClusterBitmap.Load(vol);
+            var big = vol.Resolve(@"big\random-20MiB.bin")!;
+            var bigData = vol.FindAttribute(vol.GetRecord(big.Record), AttrType.Data)!;
+            var run0 = bigData.Runs[0];
+            long inBig = vol.Offset + run0.Lcn * (long)cs + cs + 512; // second cluster of the file, +512
+            var owners = ClusterOwnerMap.Build(vol);
+            long freeLcn = bitmap.UnallocatedRanges().SelectMany(r => Enumerable.Range(0, (int)Math.Min(r.Count, 64)).Select(i => r.Lcn + i)).First(l => owners.Find(l) == null); // free and never referenced by a (deleted) file
+            long inFree = vol.Offset + freeLcn * (long)cs;
+            var hello = vol.Resolve(@"Users\Alice\Documents\hello.txt")!;
+            var mftRun = vol.MftDataAttribute.Runs[0];
+            long inMft = vol.Offset + mftRun.Lcn * (long)cs + hello.Record * vol.RecordSize;
+            var small = vol.Resolve(@"Users\Alice\Documents\nonresident-small.bin")!; // 5000 bytes: second cluster is mostly slack
+            var smallData = vol.FindAttribute(vol.GetRecord(small.Record), AttrType.Data)!;
+            long inSlack = vol.Offset + (smallData.Runs[0].Lcn + 1) * (long)cs + 2048; // file offset 6144 > 5000
+
+            var log = BadSectorLog.Parse($"{inBig}\t512\n{inFree}\t512\n{inMft}\t1024\n{inSlack}\t512\n", "unit.badsectors.txt");
+            Assert.Equal(4, log.Ranges.Count);
+            var report = BadSectorAnalyzer.Analyze(dev, log);
+            output.WriteLine(report.ToText());
+
+            var bigFile = Assert.Single(report.Files, f => f.Record == big.Record);
+            Assert.Equal(@"\big\random-20MiB.bin", bigFile.Path);
+            Assert.Equal(512, bigFile.BytesLost);
+            Assert.Equal((run0.Vcn + 1) * cs + 512, bigFile.FirstOffset);
+            Assert.Equal(20L * 1024 * 1024, bigFile.FileSize);
+            Assert.False(bigFile.Metadata);
+            Assert.Contains("small hole", bigFile.Impact);
+
+            var freeHit = Assert.Single(report.Hits, h => h.Offset == inFree);
+            Assert.Equal(BadSectorArea.NtfsUnallocated, freeHit.Area);
+            Assert.Equal(freeLcn, freeHit.Lcn);
+            Assert.Equal(512, report.Bytes(BadSectorArea.NtfsUnallocated));
+
+            var mft = Assert.Single(report.Files, f => f.Record == 0 && f.Attribute == "$DATA");
+            Assert.True(mft.Metadata);
+            Assert.Contains(mft.DamagedRecords, d => d.Record == hello.Record && d.Name.EndsWith("hello.txt"));
+
+            var slackFile = Assert.Single(report.Files, f => f.Record == small.Record);
+            Assert.Equal(0, slackFile.BytesLost);
+            Assert.Equal(512, slackFile.BytesInSlack);
+            Assert.Equal(BadSectorArea.NtfsSlack, Assert.Single(report.Hits, h => h.Offset == inSlack).Area);
+            Assert.Contains("intact", slackFile.Impact);
+
+            Assert.Equal(1, report.UserFilesAffected);
+            Assert.Contains("1 file(s) lost", report.Headline);
+            Assert.Contains("MFT record", report.Headline);
+
+            string tmp = Path.Combine(Path.GetTempPath(), "nova-bad-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tmp);
+            try
+            {
+                report.WriteCsv(Path.Combine(tmp, "bad.csv"));
+                report.WriteText(Path.Combine(tmp, "bad.txt"));
+                Assert.Equal(report.Hits.Count + 1, File.ReadAllLines(Path.Combine(tmp, "bad.csv")).Length);
+                Assert.Contains("AFFECTED FILES", File.ReadAllText(Path.Combine(tmp, "bad.txt")));
+            }
+            finally { Directory.Delete(tmp, true); }
+
+            // A log that only touches free space gives the all-clear.
+            var clean = BadSectorAnalyzer.Analyze(dev, BadSectorLog.Parse($"{inFree}\t4096\n"));
+            Assert.Equal("No files affected.", clean.Headline);
+            Assert.Empty(clean.Files);
+        }
+    }
+
+    [Fact]
+    public void BadSectors_GptImage_ClassifiesTableGapAndForeignPartition()
+    {
+        if (!Available) return;
+        using var dev = ResilientBlockDevice.ForImage(TestImages.Gpt);
+        var table = PartitionTable.Read(dev);
+        var vols = VolumeLocator.Find(dev, table);
+        var ntfs = vols[0];
+        var log = BadSectorLog.Parse("512\t512\n" + $"{700 * 1024}\t512\n" + $"{2 * 1024 * 1024}\t512\n" + $"{dev.Length - 512}\t512\n" + $"{ntfs.StartOffset + 3 * 4096}\t512\n");
+        var r = BadSectorAnalyzer.Analyze(dev, log, table, vols);
+        output.WriteLine(r.ToText());
+        Assert.Equal(BadSectorArea.PartitionTable, r.Hits[0].Area);
+        Assert.Contains("GPT header", r.Hits[0].AreaText);
+        Assert.Equal(BadSectorArea.Unpartitioned, r.Hits[1].Area);
+        Assert.Equal(BadSectorArea.NonNtfsPartition, r.Hits[2].Area);
+        Assert.Contains("EFI", r.Hits[2].AreaText);
+        Assert.Equal(3, r.Hits[3].Lcn); // hits are sorted by offset: the NTFS one precedes the backup GPT at the end of the disk
+        Assert.StartsWith("Partition 2", r.Hits[3].Partition);
+        Assert.Equal(BadSectorArea.PartitionTable, r.Hits[4].Area);
+        Assert.Contains("backup GPT", r.Hits[4].AreaText);
+        Assert.Contains("Partition-table sectors are affected", r.Verdict);
+    }
 }

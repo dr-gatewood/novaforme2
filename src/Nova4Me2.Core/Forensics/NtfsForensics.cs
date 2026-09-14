@@ -41,7 +41,7 @@ public sealed class ClusterBitmap
 /// <summary>Reverse map cluster → owning MFT record/attribute (Sleuth Kit ifind -d).</summary>
 public sealed class ClusterOwnerMap
 {
-    public sealed record Run(long Lcn, long Count, long Record, uint AttrType, string AttrName, bool Deleted);
+    public sealed record Run(long Lcn, long Count, long Vcn, long Record, uint AttrType, string AttrName, bool Deleted);
     private readonly List<Run> _runs;
     private ClusterOwnerMap(List<Run> runs) { _runs = runs; }
     public int Count => _runs.Count;
@@ -59,7 +59,7 @@ public sealed class ClusterOwnerMap
             foreach (var a in rec.Attributes)
             {
                 if (!a.NonResident) continue;
-                foreach (var r in a.Runs) if (!r.IsSparse) runs.Add(new Run(r.Lcn, r.Count, rec.IsExtension ? rec.BaseRecord : n, a.Type, a.Name, !rec.InUse));
+                foreach (var r in a.Runs) if (!r.IsSparse) runs.Add(new Run(r.Lcn, r.Count, r.Vcn, rec.IsExtension ? rec.BaseRecord : n, a.Type, a.Name, !rec.InUse));
             }
             if (n % 2048 == 0) progress?.Report((n, total));
         }
