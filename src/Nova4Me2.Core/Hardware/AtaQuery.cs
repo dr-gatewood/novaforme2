@@ -73,16 +73,16 @@ public static class AtaQuery
 
     private static byte[]? PassThrough(SafeFileHandle h, byte command, byte features, byte lbaMid, byte lbaHigh, byte count, out string error)
     {
-        const int hdr = 40; // sizeof(ATA_PASS_THROUGH_EX) on x64
+        // ATA_PASS_THROUGH_EX on x64: Length@0(2) AtaFlags@2(2) PathId@4 TargetId@5 Lun@6 Reserved@7 DataTransferLength@8(4)
+        // TimeOutValue@12(4) ReservedAsUlong@16(4) [pad 20..23] DataBufferOffset@24(8) PreviousTaskFile@32(8) CurrentTaskFile@40(8) => 48 bytes
+        const int hdr = 48;
         var buf = new byte[hdr + 512];
         Bin.PutU16(buf, 0, hdr);
         Bin.PutU16(buf, 2, (ushort)(ATA_FLAGS_DATA_IN | ATA_FLAGS_DRDY_REQUIRED));
         Bin.PutU32(buf, 8, 512);   // DataTransferLength
         Bin.PutU32(buf, 12, 15);   // TimeOutValue
-        Bin.PutU64(buf, 24, hdr);  // DataBufferOffset (ULONG_PTR, x64)
-        // CurrentTaskFile at offset 32 (PreviousTaskFile at 24 is only 8 bytes on x86; on x64 layout: Previous @ 24? no: Previous @ 32-8?)
-        // Layout x64: Length(2) AtaFlags(2) PathId TargetId Lun Reserved(1) DataTransferLength(4) TimeOutValue(4) ReservedAsUlong(4) DataBufferOffset(8) PreviousTaskFile(8) CurrentTaskFile(8) = 40
-        int cur = 32;
+        Bin.PutU64(buf, 24, hdr);  // DataBufferOffset (ULONG_PTR): data follows the header
+        int cur = 40;
         buf[cur + 0] = features; buf[cur + 1] = count; buf[cur + 2] = 1; buf[cur + 3] = lbaMid; buf[cur + 4] = lbaHigh; buf[cur + 5] = 0xA0; buf[cur + 6] = command;
         var o = NativeMethods.Ioctl(h, NativeMethods.IOCTL_ATA_PASS_THROUGH, buf, buf.Length, out int err);
         if (o == null || o.Length < hdr + 512) { error = o == null ? NativeMethods.ErrorText(err) : "short reply"; return null; }

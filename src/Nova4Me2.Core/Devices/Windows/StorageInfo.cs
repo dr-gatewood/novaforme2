@@ -57,7 +57,8 @@ public sealed class StorageInfo
         int phys = 0, logical = 0;
         Bin.PutU32(q, 0, 6); // StorageAccessAlignmentProperty
         var al = NativeMethods.Ioctl(h, NativeMethods.IOCTL_STORAGE_QUERY_PROPERTY, q, 64, out _);
-        if (al != null && al.Length >= 28) { logical = (int)Bin.U32(al, 12); phys = (int)Bin.U32(al, 16); }
+        // STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR: BytesPerCacheLine@8, BytesOffsetForCacheAlignment@12, BytesPerLogicalSector@16, BytesPerPhysicalSector@20
+        if (al != null && al.Length >= 28) { logical = (int)Bin.U32(al, 16); phys = (int)Bin.U32(al, 20); }
         bool seek = true;
         Bin.PutU32(q, 0, 7); // StorageDeviceSeekPenaltyProperty
         var sp = NativeMethods.Ioctl(h, NativeMethods.IOCTL_STORAGE_QUERY_PROPERTY, q, 16, out _);
