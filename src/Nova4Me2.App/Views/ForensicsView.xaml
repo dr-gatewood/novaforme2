@@ -142,6 +142,44 @@
           </ListView>
         </Grid>
       </TabItem>
+      <!-- Bad sectors -->
+      <TabItem Header="Bad sectors">
+        <Grid Margin="0,8,0,0">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="190" />
+          </Grid.RowDefinitions>
+          <WrapPanel>
+            <TextBox x:Name="BadLogPath" Width="520" ToolTip="The .badsectors.txt the imager wrote next to an image, a GNU ddrescue mapfile, or a plain list of LBAs" />
+            <Button Content="Browse…" Click="BadBrowse_Click" />
+            <Button x:Name="BadRun" Content="Analyze" Style="{StaticResource AccentButton}" Click="BadAnalyze_Click" />
+            <Button Content="Save report (TXT + CSV)" Click="BadSave_Click" />
+            <TextBlock x:Name="BadStatus" Style="{StaticResource Muted}" VerticalAlignment="Center" />
+          </WrapPanel>
+          <Border Grid.Row="1" Style="{StaticResource CardAlt}" Margin="0,8,0,8" Padding="12">
+            <StackPanel>
+              <TextBlock x:Name="BadHeadline" Style="{StaticResource Body}" FontWeight="SemiBold" TextWrapping="Wrap" Text="Pick the bad-sector log of an image and press Analyze to see which files (if any) the unreadable sectors belong to." />
+              <TextBlock x:Name="BadVerdict" Style="{StaticResource Muted}" TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+          <ListView x:Name="BadList" Grid.Row="2" SelectionMode="Extended">
+            <ListView.View>
+              <GridView>
+                <GridViewColumn Header="Where" Width="400" DisplayMemberBinding="{Binding Where}" />
+                <GridViewColumn Header="Kind" Width="160" DisplayMemberBinding="{Binding Kind}" />
+                <GridViewColumn Header="Lost" Width="90" DisplayMemberBinding="{Binding Lost}" />
+                <GridViewColumn Header="Size" Width="90" DisplayMemberBinding="{Binding Size}" />
+                <GridViewColumn Header="Offsets in file" Width="230" DisplayMemberBinding="{Binding Range}" />
+                <GridViewColumn Header="Hits" Width="60" DisplayMemberBinding="{Binding Hits}" />
+                <GridViewColumn Header="Impact" Width="640" DisplayMemberBinding="{Binding Impact}" />
+              </GridView>
+            </ListView.View>
+          </ListView>
+          <TextBox x:Name="BadDetail" Grid.Row="3" Margin="0,8,0,0" IsReadOnly="True" FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" AcceptsReturn="True" TextWrapping="NoWrap" VerticalContentAlignment="Top" />
+        </Grid>
+      </TabItem>
       <!-- Sleuth Kit -->
       <TabItem Header="Sleuth Kit tools">
         <Grid Margin="0,8,0,0">

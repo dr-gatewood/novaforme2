@@ -75,6 +75,8 @@ Usage: nova4me2 <command> [options]
       fsstat | istat N | icat N [--stream S] [--out FILE] | ils [--deleted] | ffind N
       blkstat LCN | blkcat LCN [--count N] | blkls [--out FILE] | slack [--extract]
       fls [--deleted] [--csv FILE] [--body FILE] | timeline [--from DATE --to DATE] [--csv FILE] | usn [--limit N]
+      badsectors [LOG] [--csv FILE] [--out FILE]  map an unreadable-sector log (Nova4Me2 .badsectors.txt, ddrescue mapfile,
+                                           LBA list) to partitions, clusters and the files that own them; LOG defaults to <src>.badsectors.txt
   clone <src> <targetdrive> [--partition N --target-offset BYTES] [--verify] --yes
   health <src> [--surface quick|full] [--no-smart] [--report FILE...]
   repair <src> <boot-sector|backup-boot-sector|gpt|mft-mirror|undo FILE> [--volume N] --yes
@@ -474,6 +476,21 @@ Reports: any of .txt .html .pdf by extension. Nothing is ever written to the sou
             return PrintStego(StegoAnalyzer.Analyze(ls), ls, proj, a);
         }
         using var dev = OpenSource(a);
+        if (tool is "badsectors" or "badmap")
+        {
+            string? logPath = a.Pos(3, "").Length > 0 ? a.Pos(3) : BadSectorAnalyzer.FindLogFor(a.Pos(1));
+            if (logPath == null || !File.Exists(logPath)) throw new UsageException("no bad-sector log given and none found next to the source (expected <image>.badsectors.txt).");
+            var log = BadSectorLog.Load(logPath, dev.SectorSize);
+            Console.Error.WriteLine($"  {logPath}: {log.Format}, {log.Ranges.Count:N0} range(s), {Format.Bytes(log.TotalBytes)}");
+            var report = BadSectorAnalyzer.Analyze(dev, log, progress: new Progress<string>(m => Console.Error.WriteLine("  " + m)));
+            Console.Write(report.ToText());
+            string txt = a.Get("out") ?? Path.Combine(proj.ReportsDir, "badsectors.txt");
+            string csv = a.Get("csv") ?? Path.Combine(proj.ReportsDir, "badsectors.csv");
+            report.WriteText(txt); report.WriteCsv(csv);
+            proj.Note($"badsectors {logPath} -> {txt}, {csv}");
+            Console.Error.WriteLine($"  report: {txt}\n  csv:    {csv}");
+            return report.UserFilesAffected > 0 || report.Files.Any(f => f.Metadata) ? 2 : 0;
+        }
         var (vol, cand) = OpenVolume(dev, a);
         var src = Source(vol, a);
         switch (tool)

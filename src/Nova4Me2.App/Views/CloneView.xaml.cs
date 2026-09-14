@@ -142,7 +142,7 @@ public partial class CloneView : UserControl, INovaView
                 FilePath.Text = vhd;
                 Ui.Main.Toast("VHD ready", $"{System.IO.Path.GetFileName(vhd)} can be attached in Windows Disk Management (Action → Attach VHD; tick Read-only).");
             }
-            Ui.Main.Toast("Clone complete", $"{Format.Bytes(result.BytesDone)} copied, {result.BadSectorCount} unreadable sectors{(result.TargetSha256 != null ? (result.VerifyOk ? ", verification OK" : ", VERIFICATION MISMATCH") : "")}.", result.TargetSha256 != null && !result.VerifyOk);
+            Ui.Main.Toast("Clone complete", $"{Format.Bytes(result.BytesDone)} copied, {result.BadSectorCount} unreadable sectors{(result.TargetSha256 != null ? (result.VerifyOk ? ", verification OK" : ", VERIFICATION MISMATCH") : "")}.{(result.BadSectorCount > 0 ? " Analysis / Forensics › Bad sectors shows which files they belong to." : "")}", result.TargetSha256 != null && !result.VerifyOk);
         }
         catch (OperationCanceledException) { PhaseText.Text = "Cancelled (resumable for image files)"; Ui.Main.Toast("Clone cancelled", "Progress was saved; tick Resume to continue later."); }
         catch (Exception ex) { PhaseText.Text = "Failed: " + ex.Message; Ui.Main.Toast("Clone failed", ex.GetBaseException().Message, true); }

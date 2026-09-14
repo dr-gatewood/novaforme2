@@ -78,6 +78,9 @@ Signature (magic bytes) based recovery with exact-length parsing for formats tha
 # Embedded data & steganography
 Analyse any file: appended payloads after the format's logical end, embedded files, entropy profile, PNG chunk and JPEG segment anomalies, and an LSB chi-square test for BMP/PNG images (plus LSB-plane export). Extractable findings can be written out individually or all at once.
 
+# Bad sectors
+Answers ""what did the unreadable sectors hit?"" after a clone. Pick the .badsectors.txt the imager wrote next to the image (filled in automatically when the image is the selected drive), a GNU ddrescue mapfile, or a plain LBA list, then Analyze. Every range is mapped to the partition, cluster and owner: free space, file slack (nothing lost), a live file with the byte range and percentage lost, a deleted file, a directory index, or NTFS metadata ($MFT hits list the damaged file records by name). The verdict at the top says whether any file was actually affected; Save report writes TXT and CSV into the project.
+
 # Sleuth Kit tools
 Equivalents of fsstat, istat, icat, ils, ffind, blkstat/blkcat, blkls, fls (CSV / body file), mactime timeline, file-slack scanning and the $UsnJrnl change journal. Build the cluster map once to have blkstat name the file that owns a cluster. Body files and CSVs feed straight into mactime, Plaso or Timesketch.",
         ["Repair"] = @"# Repair
