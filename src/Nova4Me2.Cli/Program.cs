@@ -482,7 +482,14 @@ Reports: any of .txt .html .pdf by extension. Nothing is ever written to the sou
             if (logPath == null || !File.Exists(logPath)) throw new UsageException("no bad-sector log given and none found next to the source (expected <image>.badsectors.txt).");
             var log = BadSectorLog.Load(logPath, dev.SectorSize);
             Console.Error.WriteLine($"  {logPath}: {log.Format}, {log.Ranges.Count:N0} range(s), {Format.Bytes(log.TotalBytes)}");
-            var report = BadSectorAnalyzer.Analyze(dev, log, progress: new Progress<string>(m => Console.Error.WriteLine("  " + m)));
+            string lastPhase = ""; int lastPct = -1;
+            var report = BadSectorAnalyzer.Analyze(dev, log, progress: new Progress<BadSectorProgress>(m =>
+            {
+                string phase = m.Phase.Split(" (")[0];
+                if (phase != lastPhase) { if (lastPhase.Length > 0) Console.Error.WriteLine(); Console.Error.Write("  " + phase); lastPhase = phase; lastPct = -1; }
+                if (m.Determinate && m.Percent / 5 != lastPct / 5) { lastPct = m.Percent; Console.Error.Write($" {m.Percent}%"); }
+            }));
+            Console.Error.WriteLine();
             Console.Write(report.ToText());
             string txt = a.Get("out") ?? Path.Combine(proj.ReportsDir, "badsectors.txt");
             string csv = a.Get("csv") ?? Path.Combine(proj.ReportsDir, "badsectors.csv");

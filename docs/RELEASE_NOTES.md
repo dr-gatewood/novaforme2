@@ -1,3 +1,9 @@
+# Nova4Me2 v1.0.5
+
+## Fixed
+- **Bad-sector analysis showed no sign of life** while it walked the MFT of a large image (minutes on a 500 GB clone), so it looked hung. The tab now shows a progress card with the current phase, a pulsing progress bar with a percentage for the MFT indexing and range-mapping steps, elapsed time with an estimate for the current step, and a Stop button. The verdict card explains what is being done while it runs. The CLI prints the same phases and percentages.
+- Sleuth Kit → Build cluster map reports its percentage while indexing.
+
 # Nova4Me2 v1.0.4
 
 ## Added
