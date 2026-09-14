@@ -25,6 +25,10 @@ public sealed class ResilienceOptions
     public long MaxBytesPerSecond { get; set; }
     /// <summary>Optional pause between chunks.</summary>
     public TimeSpan InterChunkDelay { get; set; } = TimeSpan.Zero;
+    /// <summary>Hard time-out for a single device request (Windows devices); a hung bridge is treated as a failed read after this.</summary>
+    public TimeSpan IoTimeout { get; set; } = TimeSpan.FromSeconds(30);
+    /// <summary>When a chunk fails on a live device, retry it in smaller pieces down to one sector (true) or fail the whole chunk fast (false; used by the first imaging pass).</summary>
+    public bool SubdivideOnError { get; set; } = true;
 }
 
 public sealed class BadSectorEventArgs(long offset, int length, string reason) : EventArgs
@@ -61,7 +65,7 @@ public sealed class ResilientBlockDevice : IBlockDevice
     private volatile ConnectionState _state = ConnectionState.Connected;
     private readonly Stopwatch _throttleClock = Stopwatch.StartNew();
     private long _throttleBytes;
-    private bool _disposed;
+    private volatile bool _disposed;
     private readonly bool _canWrite;
 
     public event EventHandler<ConnectionState>? StateChanged;
@@ -147,6 +151,8 @@ public sealed class ResilientBlockDevice : IBlockDevice
                     continue;
                 }
                 // Device is alive: the error is localized to this range.
+                if (span.Length > SectorSize && !_opt.SubdivideOnError)
+                    throw new BadSectorException(off, span.Length, ex); // fast-fail: the caller (imager pass 1) will come back for this chunk
                 if (span.Length > SectorSize)
                 {
                     long mid = Bin.AlignDown(off + span.Length / 2, SectorSize);
@@ -199,6 +205,7 @@ public sealed class ResilientBlockDevice : IBlockDevice
         {
             if (_disposed) throw new ObjectDisposedException(nameof(ResilientBlockDevice));
             Thread.Sleep(_opt.PollInterval);
+            if (_disposed) throw new ObjectDisposedException(nameof(ResilientBlockDevice));
             attempt++;
             IBlockDevice? d = null;
             try
@@ -318,11 +325,12 @@ public sealed class ResilientBlockDevice : IBlockDevice
 
     public void Dispose()
     {
+        // Flag first so a reconnect loop or keepalive that currently owns the lock bails out at its next check,
+        // then take the lock to release the handle. Callers on a UI thread should dispose from a worker.
+        _disposed = true;
+        _keepalive?.Dispose();
         lock (_lock)
         {
-            if (_disposed) return;
-            _disposed = true;
-            _keepalive?.Dispose();
             try { _inner?.Dispose(); } catch { }
             _inner = null;
             SetState(ConnectionState.Closed);

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Nova4Me2.Mount</RootNamespace>
+    <NoWarn>CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="winfsp.net" Version="2.0.23075" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Nova4Me2.Core/Nova4Me2.Core.csproj" />
+  </ItemGroup>
+</Project>

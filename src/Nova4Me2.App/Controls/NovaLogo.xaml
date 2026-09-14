@@ -1,0 +1,28 @@
+<UserControl x:Class="Nova4Me2.App.Controls.NovaLogo"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Height="44">
+  <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+    <Grid Width="40" Height="40" Margin="0,0,10,0">
+      <Ellipse x:Name="Glow" Width="40" Height="40">
+        <Ellipse.Fill>
+          <RadialGradientBrush>
+            <GradientStop Color="{DynamicResource GlowColor}" Offset="0" />
+            <GradientStop Color="{DynamicResource AccentColor}" Offset="0.45" />
+            <GradientStop Color="#00000000" Offset="1" />
+          </RadialGradientBrush>
+        </Ellipse.Fill>
+      </Ellipse>
+      <Ellipse Width="22" Height="22" Fill="{DynamicResource Accent}" Opacity="0.9" />
+      <Path x:Name="Star" Data="M20,4 L23,17 L36,20 L23,23 L20,36 L17,23 L4,20 L17,17 Z" Fill="White" Opacity="0.95" RenderTransformOrigin="0.5,0.5">
+        <Path.RenderTransform>
+          <RotateTransform x:Name="StarRotate" Angle="0" />
+        </Path.RenderTransform>
+      </Path>
+      <Ellipse Width="8" Height="8" Fill="White" />
+    </Grid>
+    <TextBlock VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Text}">
+      <Run Text="Nova" /><Run Text="4" Foreground="{DynamicResource Accent}" FontWeight="Bold" /><Run Text="Me" /><Run Text="2" Foreground="{DynamicResource Accent}" FontWeight="Bold" />
+    </TextBlock>
+  </StackPanel>
+</UserControl>

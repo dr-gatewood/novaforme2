@@ -18,8 +18,9 @@ public static class DeviceFactory
             if (num is { } n) return OpenPhysicalDrive(n, options, writable);
             if (source.StartsWith(@"\\.\", StringComparison.OrdinalIgnoreCase) || source.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
             {
-                var d = new WindowsPhysicalDrive(source, writable);
-                return new ResilientBlockDevice(d, () => new WindowsPhysicalDrive(source, writable), options);
+                int t = (int)options.IoTimeout.TotalMilliseconds;
+                var d = new WindowsPhysicalDrive(source, writable, t);
+                return new ResilientBlockDevice(d, () => new WindowsPhysicalDrive(source, writable, t), options);
             }
         }
         if (!File.Exists(source) && !source.StartsWith("/dev/"))
@@ -45,18 +46,19 @@ public static class DeviceFactory
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     public static ResilientBlockDevice OpenPhysicalDrive(int number, ResilienceOptions options, bool writable = false)
     {
-        var d = new WindowsPhysicalDrive($@"\\.\PhysicalDrive{number}", writable);
+        int timeout = (int)options.IoTimeout.TotalMilliseconds;
+        var d = new WindowsPhysicalDrive($@"\\.\PhysicalDrive{number}", writable, timeout);
         var id = DriveIdentity.Capture(d, d.Info.Serial, d.Info.Model);
         Log.Info($"Opened PhysicalDrive{number}: {d.Description}, S/N {d.Info.Serial}");
         IBlockDevice? Reopen()
         {
             // The drive number can change after a USB re-enumeration; search by identity first.
             var found = DriveEnumerator.FindByIdentity(id);
-            if (found != null) return new WindowsPhysicalDrive(found.DevicePath, writable);
+            if (found != null) return new WindowsPhysicalDrive(found.DevicePath, writable, timeout);
             // Fall back to the original path in case identity queries fail through this bridge.
             try
             {
-                var same = new WindowsPhysicalDrive($@"\\.\PhysicalDrive{number}", writable);
+                var same = new WindowsPhysicalDrive($@"\\.\PhysicalDrive{number}", writable, timeout);
                 if (same.Length == id.Length) return same;
                 same.Dispose();
             }

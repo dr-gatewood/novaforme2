@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Nova4Me2.Cli</RootNamespace>
+    <AssemblyName>nova4me2</AssemblyName>
+    <NoWarn>CA1416</NoWarn>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Nova4Me2.Core/Nova4Me2.Core.csproj" />
+    <ProjectReference Include="../Nova4Me2.Mount/Nova4Me2.Mount.csproj" />
+  </ItemGroup>
+</Project>

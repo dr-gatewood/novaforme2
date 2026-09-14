@@ -1,0 +1,67 @@
+name: build
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+jobs:
+  linux-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Install ntfs-3g (test image generator)
+        run: sudo apt-get update && sudo apt-get install -y ntfs-3g attr
+      - name: Generate NTFS test images
+        run: sudo bash scripts/make-test-image.sh /tmp/nova4me2-testimages
+      - name: Build tests (pulls in Core) and CLI (pulls in Mount)
+        run: |
+          dotnet build tests/Nova4Me2.Tests -c Release
+          dotnet build src/Nova4Me2.Cli -c Release
+      - name: Test
+        run: sudo -E env "PATH=$PATH" NOVA_TEST_IMAGES=/tmp/nova4me2-testimages dotnet test tests/Nova4Me2.Tests -c Release --no-build --logger "console;verbosity=normal"
+  windows-build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build solution (incl. WPF app)
+        run: dotnet build Nova4Me2.sln -c Release
+      - name: Unit tests (image-based tests are skipped without images)
+        run: dotnet test tests/Nova4Me2.Tests -c Release --no-build
+      - name: Publish app and CLI
+        run: |
+          dotnet publish src/Nova4Me2.App/Nova4Me2.App.csproj -c Release -r win-x64 --self-contained true -o publish/Nova4Me2
+          dotnet publish src/Nova4Me2.Cli/Nova4Me2.Cli.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/nova4me2-cli
+      - name: Zip
+        shell: pwsh
+        run: |
+          $v = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "dev" }
+          Compress-Archive -Path publish/Nova4Me2/* -DestinationPath "Nova4Me2-$v-win-x64.zip" -Force
+          Compress-Archive -Path publish/nova4me2-cli/nova4me2.exe -DestinationPath "nova4me2-cli-$v-win-x64.zip" -Force
+          Get-FileHash *.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+      - name: Upload build artifact (optional; fails harmlessly when the account's artifact storage quota is exhausted)
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: Nova4Me2-win-x64
+          path: |
+            *.zip
+            SHA256SUMS.txt
+      - name: Publish GitHub release (tags only)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Nova4Me2 ${{ github.ref_name }}
+          body_path: docs/RELEASE_NOTES.md
+          files: |
+            Nova4Me2-*-win-x64.zip
+            nova4me2-cli-*-win-x64.zip
+            SHA256SUMS.txt

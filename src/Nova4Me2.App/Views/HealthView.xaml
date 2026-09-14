@@ -1,0 +1,102 @@
+<UserControl x:Class="Nova4Me2.App.Views.HealthView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Nova4Me2.App.Controls">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel>
+      <Grid Margin="0,0,0,14">
+        <StackPanel>
+          <TextBlock Text="Health" Style="{StaticResource H1}" />
+          <TextBlock Text="Non-destructive analysis of the disk, its NTFS structures and the drive's own health data." Style="{StaticResource Muted}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+          <Button x:Name="AnalyzeButton" Content="Analyze" Style="{StaticResource AccentButton}" Click="Analyze_Click" />
+          <Button x:Name="QuickScan" Content="Quick surface scan" Click="Quick_Click" />
+          <Button x:Name="FullScan" Content="Full surface scan" Click="Full_Click" />
+          <Button x:Name="StopScan" Content="Stop" Click="Stop_Click" IsEnabled="False" />
+          <Button x:Name="ReportButton" Content="Save report…" Click="Report_Click" IsEnabled="False" Margin="0" />
+        </StackPanel>
+      </Grid>
+      <Border Style="{StaticResource Card}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <c:GaugeControl x:Name="ScoreGauge" Grid.Column="0" Label="structural health" Margin="0,0,20,0" />
+          <c:GaugeControl x:Name="BootGauge" Grid.Column="1" Label="boot record fix likelihood" Suffix="%" Margin="0,0,24,0" />
+          <StackPanel Grid.Column="2" VerticalAlignment="Center">
+            <TextBlock x:Name="GradeText" Text="Not analysed yet" FontSize="18" FontWeight="SemiBold" />
+            <TextBlock x:Name="VerdictText" Style="{StaticResource Body}" Margin="0,6,0,0" />
+            <ItemsControl x:Name="ReasonList" Margin="0,8,0,0">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding}" Style="{StaticResource Muted}" FontSize="12" Margin="0,1,0,1" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock x:Name="RecommendText" Foreground="{DynamicResource Accent}" Margin="0,8,0,0" TextWrapping="Wrap" />
+          </StackPanel>
+        </Grid>
+      </Border>
+      <Border Style="{StaticResource Card}">
+        <StackPanel>
+          <Grid>
+            <TextBlock Text="Findings" Style="{StaticResource H2}" Margin="0" />
+            <TextBlock x:Name="FindingsSummary" Style="{StaticResource Muted}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+          </Grid>
+          <ItemsControl x:Name="FindingList" Margin="0,8,0,0">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border BorderBrush="{Binding Brush}" BorderThickness="4,0,0,0" Background="{DynamicResource PanelAlt}" CornerRadius="8" Padding="12,8" Margin="0,0,0,6">
+                  <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                      <Border CornerRadius="999" Padding="7,1" Background="{Binding Brush}" Margin="0,0,8,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding SeverityText}" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                      </Border>
+                      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding Detail}" Style="{StaticResource Muted}" FontSize="12" Margin="0,4,0,0" />
+                    <TextBlock Text="{Binding FixText}" Foreground="{DynamicResource Accent}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+      <Border Style="{StaticResource Card}">
+        <StackPanel>
+          <TextBlock Text="Surface scan" Style="{StaticResource H2}" Margin="0,0,0,8" />
+          <Grid>
+            <TextBlock x:Name="ScanPhase" Text="Not run" FontWeight="SemiBold" />
+            <TextBlock x:Name="ScanStats" Style="{StaticResource Muted}" HorizontalAlignment="Right" />
+          </Grid>
+          <ProgressBar x:Name="ScanProgress" Maximum="100" Margin="0,8,0,8" />
+          <c:BlockMapControl x:Name="Map" Height="150" />
+        </StackPanel>
+      </Border>
+      <Border Style="{StaticResource Card}">
+        <StackPanel>
+          <TextBlock Text="SMART / drive-reported health" Style="{StaticResource H2}" Margin="0,0,0,8" />
+          <TextBlock x:Name="SmartNote" Style="{StaticResource Muted}" />
+          <ItemsControl x:Name="SmartRows">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid Margin="0,2">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="260" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{Binding Key}" Style="{StaticResource Muted}" />
+                  <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

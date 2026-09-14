@@ -18,12 +18,16 @@ public sealed unsafe class WindowsPhysicalDrive : IBlockDevice
     private readonly object _lock = new();
     private byte* _buf;
 
-    public WindowsPhysicalDrive(string devicePath, bool writable = false)
+    /// <summary>Per-request time-out for reads/writes. A hung USB bridge otherwise blocks until Windows' disk time-out (60–120 s) expires.</summary>
+    public int IoTimeoutMs { get; set; } = 30000;
+
+    public WindowsPhysicalDrive(string devicePath, bool writable = false, int? ioTimeoutMs = null)
     {
         DevicePath = devicePath;
+        if (ioTimeoutMs is { } t) IoTimeoutMs = t;
         uint access = NativeMethods.GENERIC_READ | (writable ? NativeMethods.GENERIC_WRITE : 0);
         _h = NativeMethods.CreateFileW(devicePath, access, NativeMethods.FILE_SHARE_READ | NativeMethods.FILE_SHARE_WRITE, IntPtr.Zero,
-            NativeMethods.OPEN_EXISTING, NativeMethods.FILE_ATTRIBUTE_NORMAL, IntPtr.Zero);
+            NativeMethods.OPEN_EXISTING, NativeMethods.FILE_ATTRIBUTE_NORMAL | NativeMethods.FILE_FLAG_OVERLAPPED, IntPtr.Zero);
         if (_h.IsInvalid)
         {
             int err = Marshal.GetLastWin32Error();
@@ -48,6 +52,7 @@ public sealed unsafe class WindowsPhysicalDrive : IBlockDevice
         {
             // Volume handles (\\.\C:) fall back to seeking.
             if (NativeMethods.SetFilePointerEx(_h, 0, out long end, 2)) length = end;
+            NativeMethods.SetFilePointerEx(_h, 0, out _, 0);
         }
         SectorSize = sector;
         Length = length;
@@ -79,10 +84,9 @@ public sealed unsafe class WindowsPhysicalDrive : IBlockDevice
             while (pos < end)
             {
                 int chunk = (int)Math.Min(MaxIo, end - pos);
-                if (!NativeMethods.SetFilePointerEx(_h, pos, out _, 0))
-                    throw Win32("seek", pos);
-                if (!NativeMethods.ReadFile(_h, _buf, (uint)chunk, out uint got, IntPtr.Zero))
-                    throw Win32("read", pos);
+                long p0 = pos;
+                byte* b0 = _buf;
+                uint got = NativeMethods.RunOverlapped(_h, p0, IoTimeoutMs, $"read at byte {p0}", ovp => NativeMethods.ReadFile(_h, b0, (uint)chunk, IntPtr.Zero, (NativeOverlapped*)ovp));
                 if (got != chunk)
                     throw new IOException($"Short read at {pos}: wanted {chunk}, got {got}.", NativeMethods.ERROR_SECTOR_NOT_FOUND);
                 // Copy the part of this chunk that overlaps the requested range.
@@ -115,8 +119,9 @@ public sealed unsafe class WindowsPhysicalDrive : IBlockDevice
             {
                 int chunk = Math.Min(MaxIo, buffer.Length - inPos);
                 buffer.Slice(inPos, chunk).CopyTo(new Span<byte>(_buf, chunk));
-                if (!NativeMethods.SetFilePointerEx(_h, pos, out _, 0)) throw Win32("seek", pos);
-                if (!NativeMethods.WriteFile(_h, _buf, (uint)chunk, out uint put, IntPtr.Zero)) throw Win32("write", pos);
+                long p0 = pos;
+                byte* b0 = _buf;
+                uint put = NativeMethods.RunOverlapped(_h, p0, IoTimeoutMs, $"write at byte {p0}", ovp => NativeMethods.WriteFile(_h, b0, (uint)chunk, IntPtr.Zero, (NativeOverlapped*)ovp));
                 if (put != chunk) throw new IOException($"Short write at {pos}.");
                 pos += chunk;
                 inPos += chunk;
@@ -136,12 +141,6 @@ public sealed unsafe class WindowsPhysicalDrive : IBlockDevice
             return true;
         }
         catch { return false; }
-    }
-
-    private static IOException Win32(string op, long pos)
-    {
-        int err = Marshal.GetLastWin32Error();
-        return new IOException($"Device {op} failed at byte {pos}: {NativeMethods.ErrorText(err)}", err);
     }
 
     private void ThrowIfDisposed()
