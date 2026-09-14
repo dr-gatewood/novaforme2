@@ -1,0 +1,71 @@
+<UserControl x:Class="Nova4Me2.App.Views.InfoView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Nova4Me2.App.Controls">
+  <UserControl.Resources>
+    <DataTemplate x:Key="KvTemplate">
+      <Grid Margin="0,3">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="240" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="{Binding Key}" Style="{StaticResource Muted}" />
+        <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <Grid Grid.Row="0" Margin="0,0,0,14">
+      <StackPanel>
+        <TextBlock Text="Drive info" Style="{StaticResource H1}" />
+        <TextBlock Text="Everything the drive and Windows will tell us about the hardware." Style="{StaticResource Muted}" />
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+        <Button Content="Refresh" Click="Refresh_Click" />
+        <Button x:Name="ReportButton" Content="Save report…" Click="Report_Click" Margin="0" />
+      </StackPanel>
+    </Grid>
+    <Border Grid.Row="1" Style="{StaticResource Card}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <c:DriveImageControl x:Name="Picture" Grid.Column="0" Margin="0,0,24,0" />
+        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+          <TextBlock x:Name="ModelText" FontSize="22" FontWeight="SemiBold" />
+          <TextBlock x:Name="FamilyText" Style="{StaticResource Muted}" FontSize="14" />
+          <WrapPanel Margin="0,10,0,0">
+            <Border CornerRadius="999" Padding="10,3" Background="{DynamicResource PanelAlt}" Margin="0,0,8,6"><TextBlock x:Name="CapChip" /></Border>
+            <Border CornerRadius="999" Padding="10,3" Background="{DynamicResource PanelAlt}" Margin="0,0,8,6"><TextBlock x:Name="BusChip" /></Border>
+            <Border CornerRadius="999" Padding="10,3" Background="{DynamicResource PanelAlt}" Margin="0,0,8,6"><TextBlock x:Name="SerialChip" /></Border>
+            <Border CornerRadius="999" Padding="10,3" Background="{DynamicResource PanelAlt}" Margin="0,0,8,6"><TextBlock x:Name="FwChip" /></Border>
+            <Border x:Name="HealthChip" CornerRadius="999" Padding="10,3" Background="{DynamicResource PanelAlt}" Margin="0,0,8,6"><TextBlock x:Name="HealthChipText" /></Border>
+          </WrapPanel>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <TabControl Grid.Row="2">
+      <TabItem Header="Identity">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsControl x:Name="IdentityRows" ItemTemplate="{StaticResource KvTemplate}" Margin="6" /></ScrollViewer>
+      </TabItem>
+      <TabItem Header="NVMe / SMART">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsControl x:Name="NvmeRows" ItemTemplate="{StaticResource KvTemplate}" Margin="6" /></ScrollViewer>
+      </TabItem>
+      <TabItem Header="ATA SMART">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsControl x:Name="AtaRows" ItemTemplate="{StaticResource KvTemplate}" Margin="6" /></ScrollViewer>
+      </TabItem>
+      <TabItem Header="Partitions">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsControl x:Name="PartRows" ItemTemplate="{StaticResource KvTemplate}" Margin="6" /></ScrollViewer>
+      </TabItem>
+      <TabItem Header="Windows view">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsControl x:Name="WinRows" ItemTemplate="{StaticResource KvTemplate}" Margin="6" /></ScrollViewer>
+      </TabItem>
+    </TabControl>
+  </Grid>
+</UserControl>

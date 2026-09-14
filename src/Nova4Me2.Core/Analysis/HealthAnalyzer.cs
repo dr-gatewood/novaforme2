@@ -114,7 +114,7 @@ public static class HealthAnalyzer
             rep.Volumes.Add(CheckVolume(dev, c, opt, ct));
         }
         rep.DeviceStats = dev.Stats.Clone();
-        Score(rep);
+        Rescore(rep);
         rep.BootFix = AssessBootFix(rep);
         return rep;
     }
@@ -223,7 +223,7 @@ public static class HealthAnalyzer
         return v;
     }
 
-    private static void Score(HealthReport r)
+    public static void Rescore(HealthReport r)
     {
         int s = 100;
         foreach (var f in r.AllFindings)

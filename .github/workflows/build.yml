@@ -1,0 +1,40 @@
+name: build
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+jobs:
+  linux-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Install ntfs-3g (test image generator)
+        run: sudo apt-get update && sudo apt-get install -y ntfs-3g attr
+      - name: Generate NTFS test images
+        run: sudo bash scripts/make-test-image.sh /tmp/nova4me2-testimages
+      - name: Build core, mount, cli and tests
+        run: dotnet build src/Nova4Me2.Core src/Nova4Me2.Mount src/Nova4Me2.Cli tests/Nova4Me2.Tests -c Release
+      - name: Test
+        run: sudo -E env "PATH=$PATH" NOVA_TEST_IMAGES=/tmp/nova4me2-testimages dotnet test tests/Nova4Me2.Tests -c Release --no-build --logger "console;verbosity=normal"
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build solution (incl. WPF app)
+        run: dotnet build Nova4Me2.sln -c Release
+      - name: Unit tests (image-based tests are skipped without images)
+        run: dotnet test tests/Nova4Me2.Tests -c Release --no-build
+      - name: Publish app and CLI
+        run: |
+          dotnet publish src/Nova4Me2.App/Nova4Me2.App.csproj -c Release -r win-x64 --self-contained true -o publish/Nova4Me2
+          dotnet publish src/Nova4Me2.Cli/Nova4Me2.Cli.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish/nova4me2-cli
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nova4Me2-win-x64
+          path: publish/

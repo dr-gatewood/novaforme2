@@ -1,0 +1,68 @@
+<UserControl x:Class="Nova4Me2.App.Views.RepairView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Nova4Me2.App.Views">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel>
+      <Grid Margin="0,0,0,14">
+        <StackPanel>
+          <TextBlock Text="Repair" Style="{StaticResource H1}" />
+          <TextBlock Text="Only well-understood, reversible fixes are automated. The sectors being replaced are saved first and can be put back with Undo." Style="{StaticResource Muted}" />
+        </StackPanel>
+        <Button Content="Run analysis" HorizontalAlignment="Right" VerticalAlignment="Top" Click="Analyze_Click" Margin="0" />
+      </Grid>
+      <Border Style="{StaticResource CardAlt}" BorderBrush="{DynamicResource Warn}">
+        <TextBlock Style="{StaticResource Body}" Text="Copy your important files off first (Browse → Copy to…) or make an image (Clone). Repairs write to the drive; on a drive that has locked itself read-only they simply fail, which is itself a diagnosis." />
+      </Border>
+      <TextBlock Text="Automated fixes" Style="{StaticResource H2}" />
+      <TextBlock x:Name="NoFixText" Style="{StaticResource Muted}" Text="Run the analysis to see which fixes apply." />
+      <ItemsControl x:Name="FixList">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Style="{StaticResource Card}">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" />
+                  <TextBlock Text="{Binding Why}" Style="{StaticResource Muted}" FontSize="12" Margin="0,4,0,0" />
+                  <TextBlock Text="{Binding How}" Style="{StaticResource Body}" FontSize="12" Margin="0,6,0,0" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="Apply fix" Style="{StaticResource AccentButton}" Click="Apply_Click" VerticalAlignment="Top" Margin="16,0,0,0" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <TextBlock x:Name="ResultText" Style="{StaticResource Body}" Margin="0,0,0,10" />
+      <TextBlock Text="Guidance for things Nova4Me2 does not do for you" Style="{StaticResource H2}" />
+      <ItemsControl x:Name="AdviceList">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Style="{StaticResource CardAlt}">
+              <StackPanel>
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding How}" Style="{StaticResource Muted}" FontSize="12" Margin="0,4,0,0" />
+                <TextBox Text="{Binding Commands, Mode=OneWay}" IsReadOnly="True" FontFamily="{StaticResource MonoFont}" FontSize="12" Margin="0,8,0,0" Visibility="{Binding HasCommands, Converter={x:Static local:BoolToVis.Instance}}" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <TextBlock Text="Undo" Style="{StaticResource H2}" />
+      <TextBlock Style="{StaticResource Muted}" Text="Every automated fix saved the original sectors. Restoring puts the drive back exactly as it was before that fix." />
+      <ItemsControl x:Name="BackupList" Margin="0,8,0,0">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid Margin="0,3">
+              <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+              <Button Content="Restore" HorizontalAlignment="Right" Click="Undo_Click" Margin="0" />
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Nova4Me2.App</RootNamespace>
+    <AssemblyName>Nova4Me2</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="Exists('nova4me2.ico')">nova4me2.ico</ApplicationIcon>
+    <NoWarn>CA1416</NoWarn>
+    <StartupObject>Nova4Me2.App.App</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Nova4Me2.Core/Nova4Me2.Core.csproj" />
+    <ProjectReference Include="../Nova4Me2.Mount/Nova4Me2.Mount.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../assets/**" Link="assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
