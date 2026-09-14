@@ -41,6 +41,15 @@ public static class Animations
         tt.BeginAnimation(TranslateTransform.XProperty, a);
     }
 
+    /// <summary>Animate a ProgressBar to a new value instead of jumping, so the bar visibly grows.</summary>
+    public static void Grow(System.Windows.Controls.ProgressBar bar, double value)
+    {
+        double target = Math.Clamp(value, bar.Minimum, bar.Maximum);
+        if (target < bar.Value) { bar.BeginAnimation(System.Windows.Controls.Primitives.RangeBase.ValueProperty, null); bar.Value = target; return; }
+        var a = new DoubleAnimation(target, TimeSpan.FromMilliseconds(350)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+        bar.BeginAnimation(System.Windows.Controls.Primitives.RangeBase.ValueProperty, a);
+    }
+
     public static void Pulse(UIElement e)
     {
         var a = new DoubleAnimation(1, 0.35, TimeSpan.FromMilliseconds(700)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase() };

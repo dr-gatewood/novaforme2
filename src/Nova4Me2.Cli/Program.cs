@@ -3,6 +3,7 @@ using System.Text;
 using Nova4Me2.Core.Analysis;
 using Nova4Me2.Core.Devices;
 using Nova4Me2.Core.Devices.Windows;
+using Nova4Me2.Core.Forensics;
 using Nova4Me2.Core.Hardware;
 using Nova4Me2.Core.Ntfs;
 using Nova4Me2.Core.Partitions;
@@ -43,6 +44,8 @@ public static class Program
                 "mount" => MountCmd(args),
                 "stabilize-usb" or "usb" => StabilizeUsb(args),
                 "protect" => Protect(args),
+                "vhd" => Vhd(args),
+                "forensics" or "fx" => Forensics(args),
                 "cat" => Cat(args),
                 _ => throw new UsageException($"Unknown command '{cmd}'.")
             };
@@ -63,7 +66,15 @@ Usage: nova4me2 <command> [options]
   ls <src> [path] [--volume N] [-R] [--mft-scan] [--deleted] [--all] [--long]
   cat <src> <path> [--stream NAME]      Write a file's contents to stdout
   copy <src> <path>... --to DIR [--volume N] [--mft-scan] [--overwrite|--rename] [--ads] [--verify] [--report FILE]
-  image <src> <target.img> [--partition N | --start BYTES --length BYTES] [--resume] [--single-pass] [--verify] [--md5] [--report FILE]
+  image <src> <target.img> [--partition N | --start BYTES --length BYTES] [--resume] [--single-pass] [--verify] [--md5] [--vhd] [--report FILE]
+  vhd <image.img> [--strip]               Append (or remove) the fixed-VHD footer so Windows Disk Management can attach the image
+  forensics <src> <tool> [...] --project NAME   Analysis tools (extractions go to Projects\NAME):
+      ads [--extract]                      list / extract alternate data streams
+      carve [--scope disk|volume|unalloc|file PATH] [--types a,b] [--extract] [--nested]
+      stego <path|--local FILE> [--extract] appended payloads, embedded files, entropy, LSB chi-square
+      fsstat | istat N | icat N [--stream S] [--out FILE] | ils [--deleted] | ffind N
+      blkstat LCN | blkcat LCN [--count N] | blkls [--out FILE] | slack [--extract]
+      fls [--deleted] [--csv FILE] [--body FILE] | timeline [--from DATE --to DATE] [--csv FILE] | usn [--limit N]
   clone <src> <targetdrive> [--partition N --target-offset BYTES] [--verify] --yes
   health <src> [--surface quick|full] [--no-smart] [--report FILE...]
   repair <src> <boot-sector|backup-boot-sector|gpt|mft-mirror|undo FILE> [--volume N] --yes
@@ -298,7 +309,18 @@ Reports: any of .txt .html .pdf by extension. Nothing is ever written to the sou
         var p = RunImaging(a, dev, dst, opt);
         Console.WriteLine($"{p.Phase}: {Format.Bytes(p.BytesDone)} in {Format.Duration(p.Elapsed)}, {p.BadSectorCount} unreadable sectors{(p.Sha256 != null ? $", SHA-256 {p.Sha256}" : "")}{(p.TargetSha256 != null ? $", verify {(p.VerifyOk ? "OK" : "MISMATCH")}" : "")}");
         foreach (var m in p.Messages) Console.WriteLine("  " + m);
+        if (a.Has("vhd") && p.Phase == "Complete") { dst.Dispose(); string v = VhdFooter.Append(target); Console.WriteLine($"VHD footer appended: {v} (attach in Disk Management, read-only)."); target = v; }
         SaveReports(a, ReportBuilder.FromImaging(p, a.Pos(1), target));
+        return 0;
+    }
+
+    private static int Vhd(Args a)
+    {
+        string path = a.Pos(1);
+        if (!File.Exists(path)) throw new UsageException($"{path} not found.");
+        if (a.Has("strip")) { VhdFooter.Strip(path); Console.WriteLine("VHD footer removed; the file is a plain raw image again."); return 0; }
+        string v = VhdFooter.Append(path);
+        Console.WriteLine($"Done: {v}. In Windows: Disk Management → Action → Attach VHD → tick 'Read-only' → the NTFS volume gets a drive letter.");
         return 0;
     }
 
@@ -438,6 +460,166 @@ Reports: any of .txt .html .pdf by extension. Nothing is ever written to the sou
         DiskControl.SetAttributes(n, offline: !online, readOnly: !online);
         if (!online) { try { DiskControl.SetAutomount(false); } catch (Exception ex) { Console.Error.WriteLine("  automount: " + ex.Message); } }
         Console.WriteLine(online ? $"PhysicalDrive{n} is online and writable again." : $"PhysicalDrive{n} is now offline and read-only in Windows; automount disabled. Nova4Me2 can still read it. Undo with: nova4me2 protect {n} --online");
+        return 0;
+    }
+
+    private static int Forensics(Args a)
+    {
+        string tool = a.Pos(2).ToLowerInvariant();
+        var proj = ForensicProject.Create(a.Get("project") ?? $"cli-{DateTime.Now:yyyyMMdd-HHmm}", a.Pos(1));
+        Console.Error.WriteLine($"  Project folder: {proj.Root}");
+        if (tool == "stego" && a.Get("local") is { } local)
+        {
+            using var ls = new StreamCarveSource(File.OpenRead(local), Path.GetFileName(local));
+            return PrintStego(StegoAnalyzer.Analyze(ls), ls, proj, a);
+        }
+        using var dev = OpenSource(a);
+        var (vol, cand) = OpenVolume(dev, a);
+        var src = Source(vol, a);
+        switch (tool)
+        {
+            case "ads":
+            {
+                var list = AdsScanner.Scan(src, new Progress<(int f, int n)>(p => Console.Error.Write($"\r  {p.f:N0} files, {p.n} streams   ")));
+                Console.Error.WriteLine();
+                foreach (var x in list) Console.WriteLine($"{x.Size,12:N0}  {x.Kind,-36} {x.Display}");
+                if (a.Has("extract")) foreach (var x in list) { var pth = AdsScanner.Extract(vol, x, proj.AdsDir); proj.Note($"ADS {x.Display} -> {pth}"); Console.WriteLine("  extracted: " + pth); }
+                Console.WriteLine($"{list.Count} alternate data streams.");
+                return 0;
+            }
+            case "carve":
+            {
+                string scope = a.Get("scope") ?? "unalloc";
+                ICarveSource cs;
+                List<(long, long)> regions;
+                int align;
+                if (scope.StartsWith("file", StringComparison.OrdinalIgnoreCase))
+                {
+                    string path = a.Get("scope") is { } sc && sc.Length > 5 ? sc[5..] : a.Pos(3);
+                    var e = Find(src, path) ?? throw new Exception("Path not found: " + path);
+                    cs = new StreamCarveSource(vol.OpenFile(e), e.Name);
+                    regions = FileCarver.WholeSource(cs); align = 1;
+                }
+                else if (scope == "disk") { cs = new DeviceCarveSource(dev); regions = FileCarver.WholeSource(cs); align = dev.SectorSize; }
+                else if (scope == "volume") { cs = new DeviceCarveSource(dev, vol.Offset, vol.Length, "volume"); regions = FileCarver.WholeSource(cs); align = dev.SectorSize; }
+                else
+                {
+                    var bm = ClusterBitmap.Load(vol);
+                    cs = new DeviceCarveSource(dev, vol.Offset, vol.Length, "unallocated");
+                    regions = bm.UnallocatedRanges().Select(r => (r.Lcn * (long)vol.ClusterSize, r.Count * (long)vol.ClusterSize)).ToList();
+                    align = vol.ClusterSize;
+                    Console.Error.WriteLine($"  {bm.FreeClusters:N0} free clusters in {regions.Count:N0} ranges");
+                }
+                var opt = new CarveOptions { Alignment = align, IncludeNested = a.Has("nested") || align == 1, Types = a.Get("types") is { } t ? new HashSet<string>(Signatures.All.Where(sg => t.Split(',').Any(x => sg.Name.Contains(x, StringComparison.OrdinalIgnoreCase) || sg.Extension.Equals(x, StringComparison.OrdinalIgnoreCase))).Select(sg => sg.Name)) : null };
+                using (cs)
+                {
+                    var found = FileCarver.Scan(cs, regions, opt, new Progress<CarveProgress>(p => Console.Error.Write($"\r  {Bar(p.Fraction)} {p.Fraction * 100,5:0.0}%  {p.Found} files  {Format.Rate(p.BytesPerSecond)}   ")));
+                    Console.Error.WriteLine();
+                    foreach (var f in found) Console.WriteLine($"{f.Offset,14:N0}  {Format.Bytes(f.Length),10}  {f.Confidence,-18} {f.Signature.Name}{(f.Nested ? " (nested)" : "")}");
+                    if (a.Has("extract")) foreach (var f in found) { var pth = FileCarver.Extract(cs, f, Path.Combine(proj.CarvedDir, f.Signature.Extension)); proj.Note($"carved {f} -> {pth}"); }
+                    Console.WriteLine($"{found.Count} files carved{(a.Has("extract") ? $", extracted to {proj.CarvedDir}" : "")}.");
+                }
+                return 0;
+            }
+            case "stego":
+            {
+                var e = Find(src, a.Pos(3)) ?? throw new Exception("Path not found.");
+                using var fs = new StreamCarveSource(vol.OpenFile(e), e.Name);
+                return PrintStego(StegoAnalyzer.Analyze(fs), fs, proj, a);
+            }
+            case "fsstat": Console.Write(NtfsForensics.FsStat(vol, ClusterBitmap.Load(vol))); return 0;
+            case "istat": Console.Write(NtfsForensics.IStat(vol, long.Parse(a.Pos(3)), (src as MftIndexDirectorySource)?.Index)); return 0;
+            case "icat":
+            {
+                long n = long.Parse(a.Pos(3));
+                string outp = a.Get("out") ?? Path.Combine(proj.TskDir, $"icat-{n}{(a.Get("stream") is { } st ? "-" + st : "")}.bin");
+                NtfsForensics.ICat(vol, n, a.Get("stream") ?? "", outp);
+                Console.WriteLine("written: " + outp);
+                return 0;
+            }
+            case "ils": foreach (var r in NtfsForensics.Ils(vol, a.Has("deleted"))) Console.WriteLine($"{r.Record,10} {(r.InUse ? "a" : "f")} {(r.IsDir ? "d" : "r")} {r.Size,14:N0}  {r.Name}"); return 0;
+            case "ffind":
+            {
+                long n = long.Parse(a.Pos(3));
+                var rec = vol.GetRecord(n);
+                var e = vol.EntryFromRecord(rec);
+                var idx = (src as MftIndexDirectorySource)?.Index;
+                Console.WriteLine(idx != null ? "\\" + idx.PathOf(e) : e.Name);
+                return 0;
+            }
+            case "blkstat":
+            {
+                var bm = ClusterBitmap.Load(vol);
+                Console.Error.WriteLine("  building cluster owner map…");
+                var owners = ClusterOwnerMap.Build(vol);
+                Console.Write(NtfsForensics.BlkStat(vol, bm, owners, long.Parse(a.Pos(3)), (src as MftIndexDirectorySource)?.Index));
+                return 0;
+            }
+            case "blkcat": { long lcn = long.Parse(a.Pos(3)); int cnt = a.GetInt("count", 1); Console.Write(NtfsForensics.HexDump(NtfsForensics.BlkCat(vol, lcn, cnt), lcn * (long)vol.ClusterSize, cnt * vol.ClusterSize)); return 0; }
+            case "blkls":
+            {
+                var bm = ClusterBitmap.Load(vol);
+                string outp = a.Get("out") ?? Path.Combine(proj.TskDir, "unallocated.bin");
+                long w = NtfsForensics.Blkls(vol, bm, outp, new Progress<(long d, long t)>(p => Console.Error.Write($"\r  {p.d * 100 / Math.Max(1, p.t)}%   ")));
+                Console.Error.WriteLine();
+                Console.WriteLine($"{Format.Bytes(w)} of unallocated space written to {outp}");
+                return 0;
+            }
+            case "slack":
+            {
+                var list = NtfsForensics.ScanSlack(src);
+                foreach (var x in list) Console.WriteLine($"{x.Length,6} B  H={x.Entropy:0.00}  {x.Content,-24} {x.File.Path}  |{x.Preview}|");
+                if (a.Has("extract")) foreach (var x in list) NtfsForensics.ExtractSlack(vol, x, proj.TskDir);
+                Console.WriteLine($"{list.Count} files with non-zero slack.");
+                return 0;
+            }
+            case "fls":
+            {
+                var rows = NtfsForensics.Fls(src, a.Has("deleted"));
+                if (a.Get("csv") is { } csv) { NtfsForensics.WriteCsv(rows, csv); Console.WriteLine("csv: " + csv); }
+                if (a.Get("body") is { } body) { NtfsForensics.WriteBodyFile(rows, body); Console.WriteLine("body file: " + body); }
+                if (a.Get("csv") == null && a.Get("body") == null) foreach (var r in rows) Console.WriteLine($"{(r.IsDirectory ? "d/d" : "r/r")} {(r.Deleted ? "* " : "")}{r.Record}:\t{r.Path}");
+                return 0;
+            }
+            case "timeline":
+            {
+                var rows = NtfsForensics.Fls(src, a.Has("deleted"));
+                DateTime? from = DateTime.TryParse(a.Get("from"), out var f1) ? f1 : null, to = DateTime.TryParse(a.Get("to"), out var t1) ? t1 : null;
+                var ev = NtfsForensics.Timeline(rows, from, to).ToList();
+                if (a.Get("csv") is { } csv)
+                {
+                    using var w = new StreamWriter(csv);
+                    w.WriteLine("time_utc,macb,record,size,path");
+                    foreach (var e in ev) w.WriteLine($"{e.Time:o},{e.Macb},{e.Row.Record},{e.Row.Size},\"{e.Row.Path.Replace("\"", "\"\"")}\"");
+                    Console.WriteLine($"{ev.Count} events -> {csv}");
+                }
+                else foreach (var e in ev) Console.WriteLine($"{e.Time:yyyy-MM-dd HH:mm:ss} {e.Macb} {e.Row.Size,12:N0} {e.Row.Record,8} {(e.Row.Deleted ? "(deleted) " : "")}{e.Row.Path}");
+                return 0;
+            }
+            case "usn":
+            {
+                var list = UsnJournal.Read(vol, new Progress<string>(m => Console.Error.WriteLine("  " + m)));
+                int limit = a.GetInt("limit", 500);
+                foreach (var u in list.TakeLast(limit)) Console.WriteLine($"{u.Time:yyyy-MM-dd HH:mm:ss} {u.Usn,14} {u.FileRecord,10} {u.ReasonText,-40} {u.Path}");
+                Console.WriteLine($"{list.Count} journal records{(list.Count == 0 ? " (no $UsnJrnl on this volume)" : "")}.");
+                return 0;
+            }
+            default: throw new UsageException("unknown forensics tool: " + tool);
+        }
+    }
+
+    private static int PrintStego(StegoReport r, ICarveSource cs, ForensicProject proj, Args a)
+    {
+        Console.WriteLine($"{r.Name}: {r.DetectedType}, {Format.Bytes(r.Length)}, entropy {r.OverallEntropy:0.00} bits/byte, logical end {(r.LogicalEnd?.ToString("N0") ?? "unknown")}, suspicion score {r.Score}/100");
+        if (r.LsbChiSquareScore is { } l) Console.WriteLine($"LSB chi-square: {l:0.00} — {r.LsbVerdict}");
+        foreach (var f in r.Findings) Console.WriteLine($"  [{f.Severity}] {f.Title}: {f.Detail}");
+        if (a.Has("extract"))
+            foreach (var f in r.Findings.Where(f => f.Extractable))
+            {
+                var pth = StegoAnalyzer.ExtractRange(cs, f.Offset!.Value, f.Length!.Value, proj.StegoDir, $"{Path.GetFileNameWithoutExtension(r.Name)}_{f.Offset:X}.{f.Extension ?? "bin"}");
+                proj.Note($"stego {r.Name} {f.Title} -> {pth}");
+                Console.WriteLine("  extracted: " + pth);
+            }
         return 0;
     }
 

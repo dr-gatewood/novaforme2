@@ -33,6 +33,16 @@ public partial class RecoverView : UserControl, INovaView
 
     private void UpdateEmpty() => EmptyText.Visibility = Ui.State.Jobs.Jobs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
+    /// <summary>Job bars: grow smoothly towards the bound percentage (the Tag) whenever it changes.</summary>
+    private void JobBar_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ProgressBar bar) return;
+        void Apply() { if (bar.Tag is double d) Services.Animations.Grow(bar, d); }
+        Apply();
+        var dpd = System.ComponentModel.DependencyPropertyDescriptor.FromProperty(FrameworkElement.TagProperty, typeof(ProgressBar));
+        dpd.AddValueChanged(bar, (_, _) => Apply());
+    }
+
     private static CopyJob? JobOf(object sender) => (sender as FrameworkElement)?.DataContext as CopyJob;
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => JobOf(sender)?.Cts.Cancel();

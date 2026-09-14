@@ -26,6 +26,7 @@ the disk, apply the few safe boot-record repairs, and export reports.
 | **Repair** | Restore NTFS boot sector from its backup, rewrite the backup boot sector, rebuild the primary GPT from the backup GPT, restore `$MFT` records 0–3 from `$MFTMirr`. Each write is preceded by a JSON backup of the replaced sectors; **Undo** restores them. Manual guidance (bcdboot/bootrec) is generated for boot-manager problems. |
 | **Firmware** | Installed revision, known revisions for the model (reference table), known issues (e.g. Samsung drives locking read-only after power loss), NVMe firmware-slot capabilities, and a button to the vendor tool. Nova4Me2 does not flash firmware. |
 | **Drive info** | CPU-Z style page: vendor/model family/capacity, interface as seen by Windows vs native, sector sizes, NVMe controller data, SMART, partitions, Windows' view of the volumes, a drawn product picture with the vendor colour badge (drop a PNG in `assets/` for a real photo). |
+| **Analysis / Forensics** | Project folders for extractions; alternate-data-stream scan and extraction; signature carving with exact lengths over unallocated space, a volume, a disk or inside one file; steganography/embedded-data analysis (appended payloads, nested files, entropy, PNG/JPEG anomalies, LSB chi-square); Sleuth Kit-style fsstat/istat/icat/ils/ffind/blkstat/blkcat/blkls/fls/mactime/slack/USN-journal tools with CSV and body-file export. |
 | **Reports** | Every analysis, hardware page, copy job and clone can be saved as **TXT, HTML or PDF**. |
 | **UI** | WPF, four themes (Nova Dark, Midnight, Graphite, Aurora Light), fade/slide transitions, animated progress and gauges, context-sensitive **F1** help for every view, toast notifications, log panel. Requires Administrator (manifest). |
 
@@ -104,6 +105,10 @@ nova4me2 repair 2 boot-sector                   (also: backup-boot-sector | gpt 
 nova4me2 mount 2 R:                             read-only drive letter via WinFsp (Ctrl+C unmounts)
 nova4me2 stabilize-usb [--status|--revert]
 nova4me2 protect 2                              take disk 2 offline + read-only in Windows (undo: --online)
+nova4me2 forensics 2 carve --scope unalloc --extract --project case1     carve deleted files from free space
+nova4me2 forensics 2 ads --extract --project case1                       alternate data streams
+nova4me2 forensics 2 stego "Users\Alice\photo.jpg" --extract          hidden/appended payloads, LSB check
+nova4me2 forensics 2 timeline --csv timeline.csv                         mactime-style MACB timeline
 ```
 
 `<src>` may be a drive number, `\\.\PhysicalDrive2`, `\\.\E:` or a raw image file. Global options:

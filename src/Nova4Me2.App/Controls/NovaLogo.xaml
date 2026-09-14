@@ -21,8 +21,8 @@
       </Path>
       <Ellipse Width="8" Height="8" Fill="White" />
     </Grid>
-    <TextBlock VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Text}">
-      <Run Text="Nova" /><Run Text="4" Foreground="{DynamicResource Accent}" FontWeight="Bold" /><Run Text="Me" /><Run Text="2" Foreground="{DynamicResource Accent}" FontWeight="Bold" />
+    <TextBlock VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold" Foreground="White">
+      <Run Text="N" FontWeight="Bold" /><Run Text="o" Foreground="{DynamicResource Accent}" /><Run Text="V" FontWeight="Bold" /><Run Text="a" Foreground="{DynamicResource Accent}" /><Run Text="4" Foreground="{DynamicResource Accent}" /><Run Text="M" FontWeight="Bold" /><Run Text="e" FontWeight="Bold" /><Run Text="2" FontWeight="Bold" />
     </TextBlock>
   </StackPanel>
 </UserControl>
