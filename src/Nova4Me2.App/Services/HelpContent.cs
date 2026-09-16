@@ -105,6 +105,20 @@ CPU-Z style identification of the drive: vendor, model family, capacity, interfa
 
 - The product picture is drawn from the model data; drop a PNG named after the model (e.g. MZ-V7E500.png) or the vendor (samsung.png) into the assets folder to show a real photo.
 - Export the page as a TXT / HTML / PDF report.",
+        ["Windows"] = @"# Windows tools
+The other side of the picture: what Windows itself sees, gathered with the same cmdlets an administrator would run (Get-PhysicalDisk, Get-Disk, Get-Volume, Get-Partition, Get-PnpDevice, Get-Service, Get-WinEvent) and diskpart's list disk / list volume. Nothing on this page reads or writes disk sectors; it drives Windows.
+
+# What Windows is not doing
+Each finding compares the layers: a physical disk without a disk object (Disk Management cannot show it), a foreign dynamic disk waiting for an import, an offline or read-only disk, a volume without a letter while automount is off, RAW volumes, phantom Device Manager entries, stopped services, and I/O error / reset events. The button next to a finding runs the fix; the exact command is printed under it and every run lands in the Console with its output.
+
+# Actions
+- Disks: bring online / take offline (Set-Disk -IsOffline), clear read-only (Set-Disk -IsReadOnly), import a foreign dynamic disk group (diskpart import), re-detect a device (pnputil /remove-device + /scan-devices, which rebuilds the disk object like Device Manager's Uninstall + Scan). The system disk is protected from the destructive ones.
+- Volumes: assign or remove a drive letter (diskpart assign / remove), read-only chkdsk, open in Explorer.
+- Top strip: automount on/off (mountvol /E / /N), SAN policy, service status; ""Restart storage services"" restarts vds and StorSvc, the cure for ""The RPC server is unavailable"" in Disk Management.
+- Rescan disks = diskpart rescan + Update-HostStorageCache. Report saves everything as TXT / HTML / PDF.
+
+# Never freezes
+Every command runs out of process with a hard timeout, so a stuck driver or a hung diskpart cannot hang the app.",
         ["Settings"] = @"# Settings
 - Theme: four looks; the change applies instantly.
 - Reconnect time-out: how long to wait for a vanished USB drive before giving up on a read.

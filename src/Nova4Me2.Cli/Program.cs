@@ -44,6 +44,7 @@ public static class Program
                 "mount" => MountCmd(args),
                 "stabilize-usb" or "usb" => StabilizeUsb(args),
                 "protect" => Protect(args),
+                "windows" or "win" => WindowsCmd(args),
                 "vhd" => Vhd(args),
                 "forensics" or "fx" => Forensics(args),
                 "cat" => Cat(args),
@@ -83,6 +84,8 @@ Usage: nova4me2 <command> [options]
   mount <src> <letter|folder> [--volume N] [--mft-scan] [--show-system]   read-only drive letter or folder (needs WinFsp)
   stabilize-usb [--status|--revert]     Stop Windows from suspending / re-probing the USB enclosure
   protect <N> [--online] [--status]     Take disk N offline + read-only in Windows (mount manager ignores it; raw reads still work)
+  windows <status|findings|rescan|online N|offline N|clear-ro N|import N|assign VOL [L]|remove VOL|redetect ID|phantoms|
+           automount on|off|services|events [--hours H]|report FILE>   Windows' own view (Get-Disk, diskpart…) and its fixes; --yes skips prompts
 
 <src> is a drive number (0), \\.\PhysicalDrive0, \\.\C:, or a raw image file (.img/.dd).
 Global: --reconnect-timeout SEC (180)  --throttle MB/s  --chunk KB (1024)  --no-keepalive  --log FILE  --verbose  --quiet
@@ -455,6 +458,81 @@ Reports: any of .txt .html .pdf by extension. Nothing is ever written to the sou
         }
         Console.Error.WriteLine();
         return 0;
+    }
+
+    private static int WindowsCmd(Args a)
+    {
+        if (!OperatingSystem.IsWindows()) throw new UsageException("windows tools are Windows-only.");
+        string sub = a.Pos(1, "status").ToLowerInvariant();
+        WindowsAction? act = sub switch
+        {
+            "rescan" => WindowsStorage.Actions.Rescan(),
+            "online" => WindowsStorage.Actions.OnlineDisk(int.Parse(a.Pos(2))),
+            "offline" => WindowsStorage.Actions.OfflineDisk(int.Parse(a.Pos(2))),
+            "clear-ro" => WindowsStorage.Actions.ClearReadOnly(int.Parse(a.Pos(2))),
+            "import" => WindowsStorage.Actions.ImportForeign(int.Parse(a.Pos(2))),
+            "assign" => WindowsStorage.Actions.AssignLetter(int.Parse(a.Pos(2)), a.Pos(3, "").Length > 0 ? a.Pos(3) : null),
+            "remove" => WindowsStorage.Actions.RemoveLetter(int.Parse(a.Pos(2))),
+            "redetect" => WindowsStorage.Actions.RedetectDevice(a.Pos(2), ""),
+            "phantoms" => WindowsStorage.Actions.RemovePhantoms(),
+            "automount" => a.Pos(2).Equals("on", StringComparison.OrdinalIgnoreCase) ? WindowsStorage.Actions.EnableAutomount() : WindowsStorage.Actions.DisableAutomount(),
+            "services" => WindowsStorage.Actions.RestartServices(),
+            "chkdsk" => WindowsStorage.Actions.ChkdskScan(a.Pos(2)),
+            _ => null,
+        };
+        if (act != null)
+        {
+            if (!Confirm(a, $"{act.Label}\n  runs: {act.Command.Replace("\n", " ; ")}\nContinue?")) return 1;
+            var r = WindowsStorage.Execute(act);
+            Console.WriteLine(r.Text);
+            if (!r.Ok) Console.Error.WriteLine(r.TimedOut ? "timed out" : $"exit code {r.ExitCode}");
+            return r.Ok ? 0 : 1;
+        }
+        double hours = a.GetDouble("hours", 24);
+        bool events = sub is "events" or "report" or "status";
+        var snap = WindowsStorage.Snapshot(hours, new Progress<string>(m => Console.Error.WriteLine("  " + m)), includeEvents: events);
+        switch (sub)
+        {
+            case "events":
+                foreach (var e in snap.Events) Console.WriteLine($"{e.Time.ToLocalTime():yyyy-MM-dd HH:mm:ss} {e.ProviderName,-28} {e.Id,5} {e.LevelDisplayName,-11} {(e.Message ?? "").Replace("\r", "").Replace("\n", " ")}");
+                Console.WriteLine($"{snap.Events.Count} events in the last {hours:0.#} h.");
+                return 0;
+            case "report":
+            {
+                string file = a.Pos(2);
+                var rep = WindowsStorage.BuildReport(snap);
+                ReportWriter.Save(rep, file);
+                Console.WriteLine("Written: " + file);
+                return 0;
+            }
+            case "findings":
+                foreach (var f in snap.Findings) Console.WriteLine($"[{f.Severity}] {f.Title}\n    {f.Detail}{(f.Action != null ? "\n    fix: " + f.Action.Command.Replace("\n", " ; ") : "")}");
+                return 0;
+            default:
+                Console.WriteLine($"{snap.Os.Caption} build {snap.Os.BuildNumber} · automount {(snap.AutomountEnabled ? "on" : "OFF")} · SAN policy {snap.SanPolicy} · {string.Join(", ", snap.Services.Select(x => $"{x.Name} {x.Status}"))}");
+                Console.WriteLine();
+                Console.WriteLine("DISKS   (Get-PhysicalDisk + Get-Disk + diskpart)");
+                foreach (var p in snap.PhysicalDisks.OrderBy(p => p.Number))
+                {
+                    var d = snap.Disks.FirstOrDefault(x => x.Number == p.Number); var dp = snap.DiskpartDisks.FirstOrDefault(x => x.Number == p.Number);
+                    string st = dp is { Foreign: true } ? "FOREIGN dynamic" : d == null ? "NO DISK OBJECT" : (d.IsOffline == true ? "Offline" : "Online") + (d.IsReadOnly == true ? ", read-only" : "") + (dp is { Dynamic: true } ? ", dynamic" : "");
+                    Console.WriteLine($"  {p.Number,2}  {p.FriendlyName,-30} {Format.Bytes(p.Size ?? 0),9}  {p.BusType,-5} {d?.PartitionStyle ?? "",-4} {st,-26} {p.HealthStatus}  fw {p.FirmwareVersion}  sn {p.SerialNumber}");
+                }
+                Console.WriteLine();
+                Console.WriteLine("VOLUMES (Get-Volume + diskpart)");
+                foreach (var v in snap.Volumes.OrderBy(v => v.Letter.Length == 0).ThenBy(v => v.Letter))
+                    Console.WriteLine($"  {v.Letter,-3} {v.FileSystemLabel,-16} {(string.IsNullOrEmpty(v.FileSystem) ? "RAW" : v.FileSystem),-6} {v.DriveType,-9} {Format.Bytes(v.Size ?? 0),9} free {Format.Bytes(v.SizeRemaining ?? 0),9}  {v.HealthStatus}  disk {v.DiskNumber}");
+                foreach (var dv in snap.DiskpartVolumes) Console.WriteLine($"  diskpart volume {dv.Number,2} {dv.Letter,-3} {dv.Label,-12} {dv.Fs,-6} {dv.Type,-10} {dv.Size,-8} {dv.Status,-9} {dv.Info}");
+                Console.WriteLine();
+                Console.WriteLine("DEVICE MANAGER");
+                foreach (var d in snap.PnpDisks) Console.WriteLine($"  {d.FriendlyName,-44} {d.Status,-8} {(d.IsPhantom ? "phantom" : d.Problem),-18} {d.InstanceId}");
+                Console.WriteLine();
+                Console.WriteLine("FINDINGS");
+                foreach (var f in snap.Findings) Console.WriteLine($"  [{f.Severity}] {f.Title}{(f.Action != null ? "  → " + f.Action.Command.Replace("\n", " ; ") : "")}");
+                if (snap.Events.Count > 0) Console.WriteLine($"\n{snap.Events.Count} storage events in the last {hours:0.#} h (windows events).");
+                foreach (var pr in snap.Problems) Console.Error.WriteLine("  [query failed] " + pr);
+                return 0;
+        }
     }
 
     private static int Protect(Args a)

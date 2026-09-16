@@ -127,9 +127,13 @@ public static class DriveEnumerator
         using var h = NativeMethods.CreateFileW(volumeDevicePath, 0, NativeMethods.FILE_SHARE_READ | NativeMethods.FILE_SHARE_WRITE, IntPtr.Zero, NativeMethods.OPEN_EXISTING, 0, IntPtr.Zero);
         if (h.IsInvalid) return -1;
         var o = NativeMethods.Ioctl(h, NativeMethods.IOCTL_STORAGE_GET_DEVICE_NUMBER, ReadOnlySpan<byte>.Empty, 12, out _);
-        if (o == null || o.Length < 8) return -1;
         // STORAGE_DEVICE_NUMBER { DeviceType, DeviceNumber, PartitionNumber }
-        return (int)Bin.U32(o, 4);
+        if (o != null && o.Length >= 8) return (int)Bin.U32(o, 4);
+        // Dynamic (LDM) volumes are served by volmgrx and do not answer the device-number IOCTL; ask for the disk extents instead.
+        var ext = NativeMethods.Ioctl(h, NativeMethods.IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, ReadOnlySpan<byte>.Empty, 8 + 64 * 24, out _);
+        // VOLUME_DISK_EXTENTS { DWORD NumberOfDiskExtents; DISK_EXTENT Extents[] } with DISK_EXTENT { DWORD DiskNumber; LONGLONG StartingOffset; LONGLONG ExtentLength } at offset 8.
+        if (ext != null && ext.Length >= 32 && Bin.U32(ext, 0) >= 1) return (int)Bin.U32(ext, 8);
+        return -1;
     }
 
     public static Dictionary<int, List<WindowsVolumeInfo>> MapVolumes()

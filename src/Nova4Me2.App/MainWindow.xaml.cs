@@ -27,7 +27,7 @@ public partial class MainWindow : Window
     private static readonly (string Key, string Title, string Icon)[] Nav =
     {
         ("Drives", "Drives", "drives"), ("Browse", "Browse files", "browse"), ("Recover", "Recover", "recover"), ("Clone", "Clone / Image", "clone"),
-        ("Health", "Health", "health"), ("Forensics", "Analysis / Forensics", "search"), ("Repair", "Repair", "repair"), ("Firmware", "Firmware", "firmware"), ("Info", "Drive info", "info"), ("Settings", "Settings", "settings")
+        ("Health", "Health", "health"), ("Forensics", "Analysis / Forensics", "search"), ("Repair", "Repair", "repair"), ("Firmware", "Firmware", "firmware"), ("Info", "Drive info", "info"), ("Windows", "Windows tools", "windows"), ("Settings", "Settings", "settings")
     };
 
     public AppState State => AppState.Current;
@@ -172,7 +172,7 @@ public partial class MainWindow : Window
             view = key switch
             {
                 "Drives" => new DrivesView(), "Browse" => new BrowseView(), "Recover" => new RecoverView(), "Clone" => new CloneView(), "Health" => new HealthView(),
-                "Repair" => new RepairView(), "Forensics" => new ForensicsView(), "Firmware" => new FirmwareView(), "Info" => new InfoView(), "Settings" => new SettingsView(), _ => new DrivesView()
+                "Repair" => new RepairView(), "Forensics" => new ForensicsView(), "Firmware" => new FirmwareView(), "Info" => new InfoView(), "Windows" => new WindowsView(), "Settings" => new SettingsView(), _ => new DrivesView()
             };
             _views[key] = view;
         }

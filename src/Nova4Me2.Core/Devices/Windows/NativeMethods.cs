@@ -28,6 +28,7 @@ internal static partial class NativeMethods
     public const uint IOCTL_DISK_GET_DRIVE_GEOMETRY_EX = 0x000700A0;
     public const uint IOCTL_STORAGE_QUERY_PROPERTY = 0x002D1400;
     public const uint IOCTL_STORAGE_GET_DEVICE_NUMBER = 0x002D1080;
+    public const uint IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS = 0x00560000;
     public const uint IOCTL_STORAGE_CHECK_VERIFY2 = 0x002D0800;
     public const uint IOCTL_DISK_GET_DISK_ATTRIBUTES = 0x000700F0;
     public const uint IOCTL_DISK_UPDATE_PROPERTIES = 0x00070140;
