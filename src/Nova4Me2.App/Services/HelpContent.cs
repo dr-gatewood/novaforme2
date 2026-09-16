@@ -89,6 +89,7 @@ Only the well-understood, reversible fixes are automated. Every write is precede
 - Restore boot sector from backup: NTFS keeps a copy of the boot sector at the end of the volume; this copies it over a damaged first sector.
 - Rebuild GPT from backup: reconstructs the primary partition table from the copy at the end of the disk.
 - Restore $MFT records from $MFTMirr: replaces damaged system records 0–3 with the mirror copies.
+- Convert dynamic (LDM) simple volume to basic: a Windows dynamic disk whose LDM database is foreign or damaged stays invisible to Windows even though the NTFS inside is fine (diskpart shows it as Foreign, or not at all). When the disk holds one simple volume that fills its LDM partition exactly, the fix only retypes the partition-table entry (GPT: LDM data → Basic data and the LDM metadata entry removed, both copies; MBR: type 42 → 07). No data sector is written. Windows then mounts the volume as a normal basic disk. Undo restores the dynamic layout. If the disk merely shows as Foreign and you want to keep it dynamic, diskpart's 'import' is the alternative.
 - Writes fail on a drive that has locked itself read-only (the Health view shows the NVMe read-only flag when it can see it). In that case only copying data off is possible.
 
 # Manual fixes

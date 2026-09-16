@@ -88,6 +88,7 @@ public partial class RepairView : UserControl, INovaView
                     RepairKind.RestoreBackupBootSectorFromPrimary => RepairEngine.RestoreBackupBootSectorFromPrimary(w, cand!),
                     RepairKind.RestoreGptFromBackup => RepairEngine.RestoreGptFromBackup(w),
                     RepairKind.RestoreMftFromMirror => RepairEngine.RestoreMftFromMirror(w, Core.Ntfs.NtfsVolume.Open(w, cand!)),
+                    RepairKind.ConvertDynamicToBasic => RepairEngine.ConvertDynamicToBasic(w),
                     _ => new RepairResult { Success = false, Message = "Not automated." }
                 };
             });
