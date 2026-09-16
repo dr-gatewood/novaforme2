@@ -11,5 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Nova4Me2.Core/Nova4Me2.Core.csproj" />
+    <ProjectReference Include="../../src/Nova4Me2.Mount/Nova4Me2.Mount.csproj" />
   </ItemGroup>
 </Project>
