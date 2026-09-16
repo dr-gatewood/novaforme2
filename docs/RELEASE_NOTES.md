@@ -1,3 +1,8 @@
+# Nova4Me2 v1.0.7
+
+## Added
+- **Convert dynamic (LDM) simple volume to basic** (Repair view, CLI `repair <disk> dynamic-to-basic`). Windows dynamic disks with a foreign or damaged LDM database stay invisible to Windows (diskpart: "Foreign", or missing entirely; Get-Disk and This PC show nothing) even though the NTFS volume inside is intact. When the disk holds exactly one simple NTFS volume that starts at and fits inside its LDM partition, Nova4Me2 rewrites only the partition table: on GPT the LDM data entry becomes Basic data and the LDM metadata entry is cleared in both the primary and backup tables with CRCs recomputed; on MBR the type byte 0x42 becomes 0x07. No data sector is touched, the originals are saved and Undo restores the dynamic layout. Spanned, striped or mirrored volumes are refused. Health analysis reports dynamic disks and offers the fix when it applies.
+
 # Nova4Me2 v1.0.6
 
 ## Fixed

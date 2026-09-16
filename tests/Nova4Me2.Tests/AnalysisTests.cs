@@ -82,6 +82,74 @@ public class AnalysisTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void Repair_ConvertsDynamicGptAndMbrToBasic_WithUndo()
+    {
+        if (!Available || !File.Exists(TestImages.DynamicGpt)) return;
+        string tmp = Path.Combine(Path.GetTempPath(), "nova-dyn-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tmp);
+        try
+        {
+            // Plain disks are not dynamic.
+            using (var dev = ResilientBlockDevice.ForImage(TestImages.Gpt))
+            {
+                var chk = RepairEngine.CheckDynamicDisk(dev);
+                Assert.False(chk.IsDynamic);
+                Assert.False(RepairEngine.ConvertDynamicToBasic(dev, tmp).Success);
+            }
+            string gimg = Path.Combine(tmp, "dyn-gpt.img");
+            File.Copy(TestImages.DynamicGpt, gimg);
+            using (var dev = ResilientBlockDevice.ForImage(gimg, writable: true))
+            {
+                var before = PartitionTable.Read(dev);
+                Assert.Contains(before.Partitions, p => p.TypeGuid == PartitionTable.GptLdmData);
+                Assert.Contains(before.Partitions, p => p.TypeGuid == PartitionTable.GptLdmMeta);
+                var chk = RepairEngine.CheckDynamicDisk(dev);
+                Assert.True(chk.IsDynamic);
+                Assert.True(chk.Convertible, chk.Reason);
+                Assert.Equal(2, chk.DataPartition!.Index);
+                var health = HealthAnalyzer.Analyze(dev);
+                Assert.Contains(health.DiskFindings, f => f.Repair == RepairKind.ConvertDynamicToBasic);
+
+                var res = RepairEngine.ConvertDynamicToBasic(dev, tmp);
+                Assert.True(res.Success, res.Message);
+                var after = PartitionTable.Read(dev);
+                Assert.True(after.PrimaryGptValid && after.BackupGptValid);
+                Assert.DoesNotContain(after.Problems, p => p.Contains("CRC"));
+                var basic = Assert.Single(after.Partitions);
+                Assert.Equal(PartitionTable.GptBasicData, basic.TypeGuid);
+                Assert.Equal(before.Partitions.First(p => p.TypeGuid == PartitionTable.GptLdmData).StartOffset, basic.StartOffset);
+                Assert.Equal(before.Partitions.First(p => p.TypeGuid == PartitionTable.GptLdmData).UniqueGuid, basic.UniqueGuid);
+                Assert.False(RepairEngine.CheckDynamicDisk(dev).IsDynamic);
+                var vol = VolumeLocator.Find(dev, after)[0];
+                Assert.Equal(basic.StartOffset, vol.StartOffset);
+                Assert.NotNull(Nova4Me2.Core.Ntfs.NtfsVolume.Open(dev, vol).Resolve(@"Users\Alice\Documents\hello.txt"));
+
+                var undo = RepairEngine.Undo(dev, res.BackupFile!);
+                Assert.True(undo.Success);
+                Assert.True(RepairEngine.CheckDynamicDisk(dev).IsDynamic);
+                Assert.Equal(2, PartitionTable.Read(dev).Partitions.Count);
+            }
+            string mimg = Path.Combine(tmp, "dyn-mbr.img");
+            File.Copy(TestImages.DynamicMbr, mimg);
+            using (var dev = ResilientBlockDevice.ForImage(mimg, writable: true))
+            {
+                var chk = RepairEngine.CheckDynamicDisk(dev);
+                Assert.True(chk.IsDynamic);
+                Assert.True(chk.Convertible, chk.Reason);
+                Assert.Equal(PartitionScheme.Mbr, chk.Scheme);
+                var res = RepairEngine.ConvertDynamicToBasic(dev, tmp);
+                Assert.True(res.Success, res.Message);
+                var t = PartitionTable.Read(dev);
+                Assert.Equal(0x07, Assert.Single(t.Partitions).MbrType);
+                Assert.NotNull(Nova4Me2.Core.Ntfs.NtfsVolume.Open(dev, VolumeLocator.Find(dev, t)[0]).Resolve(@"Users\Alice\Documents\hello.txt"));
+                Assert.True(RepairEngine.Undo(dev, res.BackupFile!).Success);
+                Assert.Equal(0x42, PartitionTable.Read(dev).Partitions[0].MbrType);
+            }
+        }
+        finally { try { Directory.Delete(tmp, true); } catch { } }
+    }
+
+    [Fact]
     public void Imager_ClonesPartitionWithHashAndBadSectorMap()
     {
         if (!Available) return;

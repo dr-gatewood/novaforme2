@@ -44,6 +44,8 @@ public static class TestImages
     public static string DamagedBoot => Path.Combine(Dir!, "damaged-boot.img");
     public static string Gpt => Path.Combine(Dir!, "gpt.img");
     public static string DamagedGpt => Path.Combine(Dir!, "damaged-gpt.img");
+    public static string DynamicGpt => Path.Combine(Dir!, "dynamic-gpt.img");
+    public static string DynamicMbr => Path.Combine(Dir!, "dynamic-mbr.img");
 
     public static Dictionary<string, string> Manifest()
     {

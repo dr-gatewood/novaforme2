@@ -86,6 +86,18 @@ public static class HealthAnalyzer
                 break;
         }
         foreach (var p in table.Problems) df.Add(new Finding { Severity = Severity.Warning, Area = "Partition table", Title = "Partition table note", Detail = p });
+        try
+        {
+            var dyn = RepairEngine.CheckDynamicDisk(dev, table);
+            if (dyn.IsDynamic)
+                df.Add(new Finding
+                {
+                    Severity = dyn.Convertible ? Severity.Warning : Severity.Info, Area = "Partition table", Title = dyn.Convertible ? "Dynamic (LDM) disk with a simple volume" : "Dynamic (LDM) disk",
+                    Detail = "Windows dynamic disks are handled by the Logical Disk Manager, which ignores the disk when its LDM database is foreign (diskpart shows 'Foreign': select the disk and 'import') or damaged, and Windows Home cannot use them at all. " + dyn.Summary,
+                    Repair = dyn.Convertible ? RepairKind.ConvertDynamicToBasic : RepairKind.None,
+                });
+        }
+        catch (Exception ex) { df.Add(new Finding { Severity = Severity.Info, Area = "Partition table", Title = "Dynamic-disk check skipped", Detail = ex.Message }); }
         foreach (var p in table.Partitions)
         {
             if (p.TypeGuid == PartitionTable.GptEfiSystem || p.MbrType == 0xEF)

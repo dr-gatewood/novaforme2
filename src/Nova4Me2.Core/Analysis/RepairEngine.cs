@@ -124,6 +124,115 @@ public static class RepairEngine
     }
 
     /// <summary>Put back the sectors recorded in a backup file produced by any repair.</summary>
+    /// <summary>Result of checking whether a dynamic (LDM) disk can be converted to basic by rewriting only the partition table.</summary>
+    public sealed class DynamicDiskCheck
+    {
+        public bool IsDynamic { get; init; }
+        public bool Convertible { get; init; }
+        public string Reason { get; init; } = "";
+        public PartitionScheme Scheme { get; init; }
+        public PartitionInfo? DataPartition { get; init; }
+        public PartitionInfo? MetadataPartition { get; init; }
+        public NtfsVolumeCandidate? Volume { get; init; }
+        public string Summary => !IsDynamic ? "Not a dynamic disk." : Convertible
+            ? $"Dynamic {Scheme} disk with one simple NTFS volume that fills its LDM partition exactly ({Format.Bytes(DataPartition!.Length)}); convertible in place."
+            : "Dynamic disk, but not convertible in place: " + Reason;
+    }
+
+    /// <summary>
+    /// A dynamic disk is convertible in place when it carries exactly one LDM data partition, that partition starts with a valid
+    /// NTFS boot sector, and the NTFS volume is no larger than the partition (i.e. it is a simple volume, not spanned/striped/mirrored).
+    /// </summary>
+    public static DynamicDiskCheck CheckDynamicDisk(IBlockDevice dev, PartitionTableInfo? table = null, IReadOnlyList<NtfsVolumeCandidate>? volumes = null)
+    {
+        table ??= PartitionTable.Read(dev);
+        PartitionInfo? data, meta = null;
+        if (table.Scheme == PartitionScheme.Gpt)
+        {
+            var datas = table.Partitions.Where(p => p.TypeGuid == PartitionTable.GptLdmData).ToList();
+            meta = table.Partitions.FirstOrDefault(p => p.TypeGuid == PartitionTable.GptLdmMeta);
+            if (datas.Count == 0 && meta == null) return new DynamicDiskCheck { IsDynamic = false, Scheme = table.Scheme };
+            if (datas.Count != 1) return new DynamicDiskCheck { IsDynamic = true, Scheme = table.Scheme, Reason = $"{datas.Count} LDM data partitions; only a single-partition simple volume can be converted by retyping the entry." };
+            if (!table.PrimaryGptValid) return new DynamicDiskCheck { IsDynamic = true, Scheme = table.Scheme, Reason = "the primary GPT is damaged; rebuild it from the backup first." };
+            data = datas[0];
+        }
+        else if (table.Scheme == PartitionScheme.Mbr)
+        {
+            var datas = table.Partitions.Where(p => p.MbrType == 0x42).ToList();
+            if (datas.Count == 0) return new DynamicDiskCheck { IsDynamic = false, Scheme = table.Scheme };
+            if (datas.Count != 1) return new DynamicDiskCheck { IsDynamic = true, Scheme = table.Scheme, Reason = $"{datas.Count} LDM (type 42) partitions; only a single-partition simple volume can be converted." };
+            data = datas[0];
+        }
+        else return new DynamicDiskCheck { IsDynamic = false, Scheme = table.Scheme };
+
+        // The simple volume must start at the partition start (NTFS boot sector there) and fit inside the partition.
+        NtfsVolumeCandidate? vol = volumes?.FirstOrDefault(v => v.StartOffset == data.StartOffset);
+        if (vol == null)
+        {
+            try { vol = VolumeLocator.Probe(dev, data.StartOffset, data.Length, data); } catch { vol = null; }
+        }
+        if (vol == null) return new DynamicDiskCheck { IsDynamic = true, Scheme = table.Scheme, DataPartition = data, MetadataPartition = meta, Reason = "no NTFS boot sector at the start of the LDM partition. The volume is spanned/striped/mirrored, starts at an offset inside the LDM container, or is not NTFS; retyping the partition would not expose it." };
+        long volBytes = vol.BootSector.TotalSectors * (long)vol.BootSector.BytesPerSector + vol.BootSector.BytesPerSector; // +1 backup boot sector
+        if (volBytes > data.Length) return new DynamicDiskCheck { IsDynamic = true, Scheme = table.Scheme, DataPartition = data, MetadataPartition = meta, Volume = vol, Reason = $"the NTFS volume ({Format.Bytes(volBytes)}) is larger than the LDM partition ({Format.Bytes(data.Length)}); it must be spanned across more than one extent." };
+        return new DynamicDiskCheck { IsDynamic = true, Convertible = true, Scheme = table.Scheme, DataPartition = data, MetadataPartition = meta, Volume = vol };
+    }
+
+    /// <summary>Rewrite the partition table so the LDM simple volume becomes a plain basic partition. Data sectors are not touched.</summary>
+    public static RepairResult ConvertDynamicToBasic(IBlockDevice dev, string? backupDir = null, PartitionTableInfo? table = null, IReadOnlyList<NtfsVolumeCandidate>? volumes = null)
+    {
+        if (!dev.CanWrite) return Fail("Device is opened read-only.");
+        var check = CheckDynamicDisk(dev, table, volumes);
+        if (!check.IsDynamic) return Fail("This is not a dynamic (LDM) disk; nothing to convert.");
+        if (!check.Convertible) return Fail("Refusing to convert: " + check.Reason);
+        int ss = dev.SectorSize;
+        var data = check.DataPartition!;
+        if (check.Scheme == PartitionScheme.Mbr)
+        {
+            var mbr = dev.ReadBytes(0, ss);
+            int o = 446 + (data.Index - 1) * 16;
+            if (mbr[o + 4] != 0x42) return Fail("MBR entry no longer reads as type 42; re-open the disk and analyse again.");
+            mbr[o + 4] = 0x07;
+            return WriteWithBackup(dev, "ConvertDynamicToBasic", backupDir, (0, mbr));
+        }
+        long lastLba = dev.Length / ss - 1;
+        var ph = GptHeader.Parse(dev.ReadBytes(ss, ss), 1);
+        if (!ph.Valid) return Fail("Primary GPT header is not valid: " + ph.Problem);
+        var bh = GptHeader.Parse(dev.ReadBytes(lastLba * ss, ss), lastLba);
+        int entriesBytes = (int)(ph.EntryCount * ph.EntrySize);
+        int entriesLen = (int)Bin.AlignUp(entriesBytes, ss);
+        var entries = dev.ReadBytes((long)ph.EntriesLba * ss, entriesLen);
+        if (Crc32.Compute(entries.AsSpan(0, entriesBytes)) != ph.EntriesCrc) return Fail("Primary GPT entries fail their CRC; rebuild the GPT from the backup first.");
+        // Retype the LDM data entry, clear the LDM metadata entry; keep unique GUID, range, attributes and name.
+        int dataOff = (data.Index - 1) * (int)ph.EntrySize;
+        if (new Guid(entries.AsSpan(dataOff, 16)) != PartitionTable.GptLdmData) return Fail("GPT entry no longer reads as LDM data; re-open the disk and analyse again.");
+        PartitionTable.GptBasicData.TryWriteBytes(entries.AsSpan(dataOff, 16));
+        if (Bin.Utf16(entries, dataOff + 56, 36).TrimEnd('\0').Length == 0)
+            System.Text.Encoding.Unicode.GetBytes("Basic data partition").CopyTo(entries.AsSpan(dataOff + 56));
+        if (check.MetadataPartition is { } m) entries.AsSpan((m.Index - 1) * (int)ph.EntrySize, (int)ph.EntrySize).Clear();
+        uint ecrc = Crc32.Compute(entries.AsSpan(0, entriesBytes));
+        var writes = new List<(long, byte[])>();
+        writes.Add((ss, Reheader(ph.Raw, ecrc)));
+        writes.Add(((long)ph.EntriesLba * ss, entries));
+        if (bh.Valid)
+        {
+            writes.Add(((long)bh.EntriesLba * ss, entries));
+            writes.Add((lastLba * ss, Reheader(bh.Raw, ecrc)));
+        }
+        var res = WriteWithBackup(dev, "ConvertDynamicToBasic", backupDir, writes.ToArray());
+        if (res.Success && !bh.Valid) res = new RepairResult { Success = true, Message = res.Message + " The backup GPT was already invalid and was left alone; run 'Rebuild GPT' later if wanted.", BackupFile = res.BackupFile, Written = res.Written };
+        return res;
+
+        static byte[] Reheader(byte[] raw, uint entriesCrc)
+        {
+            var h = (byte[])raw.Clone();
+            uint hsize = Bin.U32(h, 12);
+            Bin.PutU32(h, 88, entriesCrc);
+            Bin.PutU32(h, 16, 0);
+            Bin.PutU32(h, 16, Crc32.Compute(h.AsSpan(0, (int)hsize)));
+            return h;
+        }
+    }
+
     public static RepairResult Undo(IBlockDevice dev, string backupFile)
     {
         if (!dev.CanWrite) return Fail("Device is opened read-only.");

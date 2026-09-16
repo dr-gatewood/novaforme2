@@ -200,5 +200,49 @@ with open(dst, "wb") as f:
             f.write(b)
 PY
 cp "$OUT/gpt.img" "$OUT/damaged-gpt.img"
+# Dynamic-disk variants: the same NTFS inside an LDM data partition (GPT) and inside a type-42 MBR partition.
+python3 - "$OUT/gpt.img" "$OUT/dynamic-gpt.img" <<'PY'
+import sys, struct, uuid, zlib, shutil
+src, dst = sys.argv[1], sys.argv[2]
+shutil.copy(src, dst)
+ss = 512
+LDM_META = uuid.UUID("5808C8AA-7E8F-42E0-85D2-E1E90434CFB3").bytes_le
+LDM_DATA = uuid.UUID("AF9B60A0-1431-4F62-BC68-3311714A69AD").bytes_le
+with open(dst, "r+b") as f:
+    def fix(hdr_lba, entries_lba):
+        f.seek(entries_lba*ss); e = bytearray(f.read(128*128))
+        e[128:144] = LDM_DATA                      # partition 2 (the NTFS) becomes LDM data
+        e[0:16] = LDM_META                         # partition 1 (EFI in gpt.img) becomes the LDM metadata partition
+        f.seek(entries_lba*ss); f.write(e)
+        f.seek(hdr_lba*ss); h = bytearray(f.read(ss))
+        struct.pack_into("<I", h, 88, zlib.crc32(bytes(e)) & 0xffffffff)
+        struct.pack_into("<I", h, 16, 0); struct.pack_into("<I", h, 16, zlib.crc32(bytes(h[:92])) & 0xffffffff)
+        f.seek(hdr_lba*ss); f.write(h)
+    f.seek(ss); h = f.read(ss)
+    my, alt, entries = struct.unpack_from("<QQ", h, 24) + (struct.unpack_from("<Q", h, 72)[0],)
+    fix(1, entries)
+    f.seek(alt*ss); bh = f.read(ss); bentries = struct.unpack_from("<Q", bh, 72)[0]
+    fix(alt, bentries)
+PY
+python3 - "$IMG" "$OUT/dynamic-mbr.img" <<'PY'
+import sys, struct, os
+src, dst = sys.argv[1], sys.argv[2]
+ss = 512; start = 1024*1024; ntfs = os.path.getsize(src); ldm_db = 1024*1024
+total = start + ntfs + ldm_db
+with open(dst, "wb") as f:
+    f.truncate(total)
+    mbr = bytearray(512)
+    mbr[446+4] = 0x42
+    struct.pack_into("<II", mbr, 446+8, start//ss, ntfs//ss)
+    struct.pack_into("<I", mbr, 440, 0x1234ABCD)
+    mbr[510:512] = b"\x55\xAA"
+    f.write(mbr)
+    with open(src, "rb") as s:
+        f.seek(start)
+        while True:
+            b = s.read(4*1024*1024)
+            if not b: break
+            f.write(b)
+PY
 dd if=/dev/zero of="$OUT/damaged-gpt.img" bs=512 seek=1 count=33 conv=notrunc status=none
 echo "Images written to $OUT"; ls -la "$OUT"

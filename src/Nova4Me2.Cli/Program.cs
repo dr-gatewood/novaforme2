@@ -79,7 +79,7 @@ Usage: nova4me2 <command> [options]
                                            LBA list) to partitions, clusters and the files that own them; LOG defaults to <src>.badsectors.txt
   clone <src> <targetdrive> [--partition N --target-offset BYTES] [--verify] --yes
   health <src> [--surface quick|full] [--no-smart] [--report FILE...]
-  repair <src> <boot-sector|backup-boot-sector|gpt|mft-mirror|undo FILE> [--volume N] --yes
+  repair <src> <boot-sector|backup-boot-sector|gpt|mft-mirror|dynamic-to-basic|undo FILE> [--volume N] --yes
   mount <src> <letter|folder> [--volume N] [--mft-scan] [--show-system]   read-only drive letter or folder (needs WinFsp)
   stabilize-usb [--status|--revert]     Stop Windows from suspending / re-probing the USB enclosure
   protect <N> [--online] [--status]     Take disk N offline + read-only in Windows (mount manager ignores it; raw reads still work)
@@ -407,6 +407,15 @@ Reports: any of .txt .html .pdf by extension. Nothing is ever written to the sou
                 if (!Confirm(a, $"Rebuild the primary GPT of {dev.Description} from its backup?")) return 1;
                 res = RepairEngine.RestoreGptFromBackup(dev);
                 break;
+            case "dynamic-to-basic":
+            {
+                var chk = RepairEngine.CheckDynamicDisk(dev);
+                Console.WriteLine("  " + chk.Summary);
+                if (!chk.Convertible) return 1;
+                if (!Confirm(a, $"Rewrite the partition table of {dev.Description} so the LDM simple volume becomes a basic partition (data untouched)?")) return 1;
+                res = RepairEngine.ConvertDynamicToBasic(dev);
+                break;
+            }
             case "boot-sector":
             case "backup-boot-sector":
             case "mft-mirror":
@@ -422,7 +431,7 @@ Reports: any of .txt .html .pdf by extension. Nothing is ever written to the sou
                     else { var vol = NtfsVolume.Open(dev, c); if (!Confirm(a, "Overwrite damaged $MFT system records with the $MFTMirr copies?")) return 1; res = RepairEngine.RestoreMftFromMirror(dev, vol); }
                     break;
                 }
-            default: throw new UsageException("repair action must be boot-sector | backup-boot-sector | gpt | mft-mirror | undo FILE");
+            default: throw new UsageException("repair action must be boot-sector | backup-boot-sector | gpt | mft-mirror | dynamic-to-basic | undo FILE");
         }
         Console.WriteLine((res.Success ? "OK: " : "FAILED: ") + res.Message);
         return res.Success ? 0 : 1;
