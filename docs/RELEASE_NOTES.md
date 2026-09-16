@@ -1,3 +1,11 @@
+# Nova4Me2 v1.0.8
+
+## Added
+- **Windows tools view.** Everything the diskpart / PowerShell diagnostics from the recovery of a foreign dynamic disk needed, in one place: Get-PhysicalDisk, Get-Disk, Get-Volume, Get-Partition, Get-PnpDevice (disk drives incl. phantom entries), storage services, the System/Application storage event log and diskpart's list disk / list volume, joined into one disk table and one volume table. A findings list compares the layers ("physical disk present but no disk object", "foreign dynamic disk", "offline", "read-only", "no drive letter while automount is off", "RAW", "phantom devices", "I/O error / reset events") and offers the matching fix. Actions: online / offline, clear read-only, import foreign disk group, re-detect device (pnputil remove + scan), assign / remove drive letter, read-only chkdsk, remove phantom entries, scan for hardware changes, automount on/off, restart storage services (fixes "RPC server is unavailable" in Disk Management), rescan (diskpart rescan + Update-HostStorageCache). Every action prints the exact command it runs and logs command + output to a console; a TXT/HTML/PDF report captures the whole page. All commands run out of process with hard timeouts. CLI: `nova4me2 windows status|rescan|online N|offline N|clear-ro N|import N|assign VOL [L]|remove VOL|redetect ID|phantoms|automount on|off|services|events [--hours H]|report FILE`.
+
+## Fixed
+- Drives view said "No volumes visible to Windows" for a dynamic (LDM) disk even when its volume was mounted (T:). Dynamic volumes do not answer the device-number IOCTL; the disk-extents IOCTL is now used as a fallback so the letter and file system show on the card.
+
 # Nova4Me2 v1.0.7
 
 ## Added
