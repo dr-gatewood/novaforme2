@@ -18,8 +18,8 @@
         <RadioButton x:Name="ModeMft" Style="{StaticResource Pill}" Content="Rebuild from MFT" Checked="Mode_Changed" Margin="0,0,14,0" />
         <CheckBox x:Name="ShowDeleted" Content="Deleted" Checked="Filter_Changed" Unchecked="Filter_Changed" ToolTip="List deleted files found by the MFT scan" />
         <CheckBox x:Name="ShowSystem" Content="System files" Checked="Filter_Changed" Unchecked="Filter_Changed" />
-        <ComboBox x:Name="MountLetter" Width="64" Margin="6,0,4,0" ToolTip="Drive letter for the read-only mount" />
-        <Button x:Name="MountButton" Content="Mount as drive" Click="Mount_Click" ToolTip="Expose the volume read-only as a Windows drive letter (WinFsp)" />
+        <ComboBox x:Name="MountLetter" Width="84" Margin="6,0,4,0" ToolTip="Drive letter for the read-only mount, or 'Folder…' to mount inside a folder you pick" />
+        <Button x:Name="MountButton" Content="Mount as drive" Click="Mount_Click" ToolTip="Expose the volume read-only as a Windows drive letter or folder (WinFsp), so Explorer and any program can open its files" />
         <Button Content="Copy to…" Style="{StaticResource AccentButton}" Click="CopyTo_Click" Margin="0" />
       </StackPanel>
     </Grid>

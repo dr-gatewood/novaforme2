@@ -1,3 +1,9 @@
+# Nova4Me2 v1.0.6
+
+## Fixed
+- **Mount as drive did nothing visible.** Nova4Me2 runs elevated (it needs raw disk access) and Windows keeps a separate drive-letter map for elevated programs, so the WinFsp letter was created but Explorer and normally started programs could not see it. The letter is now registered through the Windows mount manager (`\\.\R:` form), which makes it global; if Windows refuses that, the app falls back to the old per-session letter and tells you clearly that only elevated programs can see it.
+- **Mount into a folder.** The drive-letter drop-down next to Mount now offers "Folder…": pick a folder and the volume appears read-only in a new sub-folder named after the volume label. Folder mounts are visible to every program regardless of elevation. The CLI `mount` command accepts a folder path too.
+
 # Nova4Me2 v1.0.5
 
 ## Fixed

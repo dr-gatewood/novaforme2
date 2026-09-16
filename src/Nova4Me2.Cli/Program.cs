@@ -80,7 +80,7 @@ Usage: nova4me2 <command> [options]
   clone <src> <targetdrive> [--partition N --target-offset BYTES] [--verify] --yes
   health <src> [--surface quick|full] [--no-smart] [--report FILE...]
   repair <src> <boot-sector|backup-boot-sector|gpt|mft-mirror|undo FILE> [--volume N] --yes
-  mount <src> <letter> [--volume N] [--mft-scan] [--show-system]   (needs WinFsp)
+  mount <src> <letter|folder> [--volume N] [--mft-scan] [--show-system]   read-only drive letter or folder (needs WinFsp)
   stabilize-usb [--status|--revert]     Stop Windows from suspending / re-probing the USB enclosure
   protect <N> [--online] [--status]     Take disk N offline + read-only in Windows (mount manager ignores it; raw reads still work)
 
@@ -436,7 +436,8 @@ Reports: any of .txt .html .pdf by extension. Nothing is ever written to the sou
         var (vol, _) = OpenVolume(dev, a);
         var src = Source(vol, a);
         using var session = MountSession.Mount(src, a.Pos(2), a.Has("show-system"));
-        Console.WriteLine($"Mounted {vol.Info.Label} read-only at {session.MountPoint}. Press Ctrl+C to unmount.");
+        Console.WriteLine($"Mounted {vol.Info.Label} read-only at {session.MountPoint}{(session.IsGlobal ? "" : " (visible to elevated programs only)")}. Press Ctrl+C to unmount.");
+        if (!session.IsGlobal) Console.Error.WriteLine("  " + session.VisibilityNote);
         var done = new ManualResetEventSlim();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; done.Set(); };
         while (!done.Wait(2000))

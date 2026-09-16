@@ -70,6 +70,7 @@ public partial class BrowseView : UserControl, INovaView
         if (!OperatingSystem.IsWindows()) return;
         var used = new HashSet<char>(DriveInfo.GetDrives().Select(d => char.ToUpperInvariant(d.Name[0])));
         foreach (char c in "RSTUVWXYZNOPQMLKJIHGFE") if (!used.Contains(c)) MountLetter.Items.Add($"{c}:");
+        MountLetter.Items.Add(FolderChoice);
         string pref = Ui.State.Settings.MountLetter;
         MountLetter.SelectedItem = MountLetter.Items.Cast<string>().FirstOrDefault(s => s == pref) ?? (MountLetter.Items.Count > 0 ? MountLetter.Items[0] : null);
     }
@@ -352,6 +353,8 @@ public partial class BrowseView : UserControl, INovaView
     }
 
     // ---- mount ----
+    private const string FolderChoice = "Folder…";
+
     private async void Mount_Click(object sender, RoutedEventArgs e)
     {
         var st = Ui.State;
@@ -369,16 +372,35 @@ public partial class BrowseView : UserControl, INovaView
             if (MessageBox.Show(Ui.Main, detail + "\n\nOpen the WinFsp download page now?", "WinFsp required", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes) Ui.OpenUrl("https://winfsp.dev/rel/");
             return;
         }
-        string letter = MountLetter.SelectedItem as string ?? "R:";
-        st.Settings.MountLetter = letter;
+        string choice = MountLetter.SelectedItem as string ?? "R:";
+        string mountPoint = choice;
+        if (choice == FolderChoice)
+        {
+            var parent = Ui.PickFolder("Pick the folder the volume should appear inside (a new sub-folder is created there)", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            if (parent == null) return;
+            string name = Core.Recovery.Extractor.SafeName(string.IsNullOrWhiteSpace(st.Volume?.Info.Label) ? "Nova4Me2-volume" : st.Volume!.Info.Label!);
+            mountPoint = Path.Combine(parent, name);
+            int n = 2;
+            while (Directory.Exists(mountPoint) && Directory.EnumerateFileSystemEntries(mountPoint).Any()) mountPoint = Path.Combine(parent, $"{name} ({n++})");
+        }
+        st.Settings.MountLetter = choice;
         try
         {
             var src = st.Source!;
             bool showSys = ShowSystem.IsChecked == true;
-            st.Mount = await Task.Run(() => MountSession.Mount(src, letter, showSys));
+            var session = await Task.Run(() => MountSession.Mount(src, mountPoint, showSys));
+            st.Mount = session;
             UpdateMountUi();
-            Ui.Main.Toast("Mounted", $"The volume is now available read-only as drive {letter}. Any program can open files from it.");
-            Ui.OpenFolder(letter + "\\");
+            if (session.IsGlobal)
+            {
+                Ui.Main.Toast("Mounted", session.IsDirectory ? $"The volume is available read-only at {session.MountPoint}. Explorer and any program can open files from it." : $"The volume is available read-only as drive {session.MountPoint}. Explorer and any program can open files from it.");
+                Ui.OpenFolder(session.IsDirectory ? session.MountPoint : session.MountPoint + "\\");
+            }
+            else
+            {
+                Ui.Main.Toast("Mounted for elevated programs only", session.VisibilityNote, true);
+                MessageBox.Show(Ui.Main, session.VisibilityNote + "\n\nTip: pick 'Folder…' in the drop-down next to Mount to make the volume visible everywhere.", "Drive letter not visible to Explorer", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
         }
         catch (Exception ex) { Ui.Main.Toast("Mount failed", ex.GetBaseException().Message, true); }
     }
@@ -386,8 +408,8 @@ public partial class BrowseView : UserControl, INovaView
     private void UpdateMountUi()
     {
         var m = Ui.State.Mount;
-        MountButton.Content = m != null ? $"Unmount {m.MountPoint}" : "Mount as drive";
+        MountButton.Content = m != null ? $"Unmount {(m.IsDirectory ? Path.GetFileName(m.MountPoint) : m.MountPoint)}" : "Mount as drive";
         MountLetter.IsEnabled = m == null;
-        MountStatus.Text = m != null ? $"Mounted read-only at {m.MountPoint}" : "";
+        MountStatus.Text = m != null ? $"Mounted read-only at {m.MountPoint}{(m.IsGlobal ? "" : " (visible to elevated programs only)")}" : "";
     }
 }

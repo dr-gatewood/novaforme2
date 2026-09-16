@@ -30,7 +30,7 @@ A file explorer for the recovered volume.
 - Select any number of files and folders (Ctrl / Shift click) and either press Copy to… or drag them straight into an Explorer window or onto the desktop. The drag copies the real file contents; Explorer shows its normal progress dialog.
 - Mode: Directory index is the fast, exact listing NTFS keeps for each folder. Rebuild from MFT walks every file record instead; use it when folders show errors or come up empty, and to list deleted files (they appear greyed out — their data may already be overwritten).
 - Show system files reveals $MFT, $LogFile and friends. Alternate data streams and encrypted files are marked in the Attributes column.
-- Mount as drive letter (needs WinFsp) exposes the whole volume read-only as a normal Windows drive so any program can open files from it.
+- Mount as drive letter (needs WinFsp) exposes the whole volume read-only as a normal Windows drive so Explorer and any program can open files from it. The letter is registered with the Windows mount manager so it is visible everywhere; if Windows refuses that, the app falls back to a per-session letter that only programs running as Administrator can see, and says so. Pick ""Folder…"" in the drop-down to mount inside a folder of your choice instead, which is always visible everywhere.
 
 # Keyboard
 Enter opens a folder, Backspace goes up, Ctrl+A selects all, Ctrl+C copies the selection to the default destination, F5 refreshes.",
