@@ -1,3 +1,8 @@
+# Nova4Me2 v1.0.9
+
+## Fixed
+- **Files copied out of a mounted volume came out read-only.** The WinFsp mount stamped FILE_ATTRIBUTE_READONLY on every file to signal the read-only view, and Explorer preserves that bit when copying, so everything dragged off the mount landed read-only on the destination. That made a copied VirtualBox VM refuse to start ("The VM session was aborted", no log written: VirtualBox could not rotate its read-only log or open the read-only .vdi). The mount is already write-protected as a whole, so the attribute is now reported only when the file really has it on the NTFS volume. Files already copied can be fixed with `attrib -R "<folder>\*" /S /D`.
+
 # Nova4Me2 v1.0.8
 
 ## Added

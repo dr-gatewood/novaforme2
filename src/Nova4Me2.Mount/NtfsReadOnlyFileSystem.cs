@@ -70,11 +70,22 @@ public sealed class NtfsReadOnlyFileSystem : FileSystemBase
 
     private static ulong Ft(DateTime t) { try { return t <= DateTime.MinValue ? 0 : (ulong)t.ToFileTimeUtc(); } catch { return 0; } }
 
+    /// <summary>
+    /// Windows attributes to report for an entry. The volume is write-protected as a whole (every write returns
+    /// STATUS_MEDIA_WRITE_PROTECTED), so FILE_ATTRIBUTE_READONLY is reported only when the file really carries it on the
+    /// NTFS volume: Explorer and every copy tool preserve that bit, and stamping it on everything made copied-out files
+    /// read-only on the destination (VirtualBox, for one, refuses to start a VM whose .vdi and logs are read-only).
+    /// </summary>
+    public static uint MapAttributes(NtfsFileAttributes ntfs, bool isDirectory)
+    {
+        uint attrs = (uint)ntfs & 0x33A7; // keep the standard FILE_ATTRIBUTE_* bits, drop reparse (0x400: we do not expose reparse data)
+        if (isDirectory) attrs |= 0x10; else if (attrs == 0) attrs = 0x80;
+        return attrs;
+    }
+
     private void Fill(NtfsEntry e, out FileInfo fi)
     {
-        uint attrs = (uint)e.Attributes & 0x37A7; // keep the standard FILE_ATTRIBUTE_* bits, drop reparse (we do not expose reparse data)
-        if (e.IsDirectory) attrs |= 0x10; else if (attrs == 0) attrs = 0x80;
-        attrs |= 0x1; // read-only view
+        uint attrs = MapAttributes(e.Attributes, e.IsDirectory);
         fi = new FileInfo
         {
             FileAttributes = attrs, ReparseTag = 0, FileSize = e.IsDirectory ? 0 : (ulong)Math.Max(0, e.Size), AllocationSize = e.IsDirectory ? 0 : (ulong)Bin.AlignUp(Math.Max(e.Size, e.AllocatedSize), _vol.ClusterSize),

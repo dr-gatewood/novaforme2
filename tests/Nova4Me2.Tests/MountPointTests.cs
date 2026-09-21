@@ -1,3 +1,4 @@
+using Nova4Me2.Core.Ntfs;
 using Nova4Me2.Mount;
 using Xunit;
 
@@ -20,4 +21,13 @@ public class MountPointTests
         Assert.Equal(new[] { @"\\.\R:", "R:" }, c);
         Assert.Equal(new[] { @"C:\mnt\apps" }, MountSession.Candidates(@"C:\mnt\apps\"));
     }
+
+    [Theory]
+    [InlineData(NtfsFileAttributes.Archive, false, 0x20u)]
+    [InlineData(NtfsFileAttributes.ReadOnly | NtfsFileAttributes.Archive, false, 0x21u)]
+    [InlineData((NtfsFileAttributes)0, false, 0x80u)]
+    [InlineData(NtfsFileAttributes.Directory, true, 0x10u)]
+    [InlineData(NtfsFileAttributes.Hidden | NtfsFileAttributes.ReparsePoint, false, 0x02u)]
+    public void MapAttributes_DoesNotStampReadOnlyOnEveryFile(NtfsFileAttributes ntfs, bool dir, uint expected)
+        => Assert.Equal(expected, NtfsReadOnlyFileSystem.MapAttributes(ntfs, dir));
 }
